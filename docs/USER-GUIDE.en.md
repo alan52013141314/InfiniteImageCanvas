@@ -1,4 +1,4 @@
-# InfiniteImageCanvas v0.2.0
+# InfiniteImageCanvas v0.3.0
 
 Extract the Windows x64 release archive into a writable folder, then run the executable. No server, account, or installation is needed. Windows 11 has been tested; Windows 10 is a compatibility target, not a tested environment. An OpenGL 3.3 graphics driver is required.
 
@@ -38,7 +38,11 @@ In fullscreen, controls hide until the pointer reaches their top or bottom regio
 
 Canvas files use `.icanvas`. The default directory is `save file` beside the executable. The first manual save uses `canvas_yyyyddMM_01.icanvas` (year, day, month), increasing the suffix if needed. For example, October 9, 2026 becomes `canvas_20260910_01.icanvas`.
 
-Changes autosave every minute. Normal close saves to the current file; an unnamed canvas uses `previous_canvas.icanvas`. Autosaving an unnamed canvas still permits a date-based name on its first manual save. Startup restores the last canvas. New/Open first saves the current canvas.
+Each second-row tab is an independent canvas, with its own selection, view, undo history and save target. Edit is in the first toolbar row. Use + or New to create a tab; Open adds a tab, or selects the existing tab if that file is already open. Startup restores all tabs and the active tab.
+
+Changed tabs autosave every minute, including inactive tabs. Normal application close saves all tabs. Unnamed tabs use separate recovery files: `previous_canvas.icanvas`, `previous_canvas_02.icanvas`, etc. Existing recovery files are retained and their names are not reused for new tabs. The first manual save still uses a date-based name.
+
+Click a tab's × to choose Save and close, Close without saving, or Cancel. Discarding only abandons changes since the last successful save; it does not undo an earlier autosave or delete existing files. Closing the final tab leaves a blank tab.
 
 Failed saves keep the window and unsaved data available for Retry or another save location. Forced termination can only recover the last successful save.
 

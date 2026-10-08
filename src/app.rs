@@ -1,3 +1,4 @@
+mod tabs;
 use crate::{
     media,
     model::{Canvas, History, Item},
@@ -14,6 +15,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+pub use tabs::Workspace;
 
 use crate::theme::{self, ACCENT};
 
@@ -81,6 +83,15 @@ enum Drag {
 }
 
 pub struct App {
+    tab_mode: bool,
+    external_blocked: bool,
+    tab_action: Option<tabs::Action>,
+    tab_headers: Vec<tabs::Header>,
+    active_tab: usize,
+    tab_scroll_to_active: bool,
+    top_ui_height: f32,
+    recovery: PathBuf,
+    reserved_paths: Vec<PathBuf>,
     canvas: Canvas,
     history: History,
     selected: HashSet<u64>,
@@ -112,17 +123,16 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
+    #[cfg(test)]
+    fn initialize(ctx: egui::Context, directory: PathBuf, initial: Option<PathBuf>) -> Self {
+        Self::initialize_mode(ctx, directory, initial, true)
+    }
+    fn initialize_mode(
+        ctx: egui::Context,
         directory: PathBuf,
         initial: Option<PathBuf>,
+        restore: bool,
     ) -> Self {
-        let app = Self::initialize(cc.egui_ctx.clone(), directory, initial);
-        #[cfg(windows)]
-        crate::native_input::install(cc, app.paste_requested.clone());
-        app
-    }
-    fn initialize(ctx: egui::Context, directory: PathBuf, initial: Option<PathBuf>) -> Self {
         ctx.set_theme(egui::Theme::Dark);
         ctx.set_visuals(egui::Visuals::dark());
         let mut fonts = egui::FontDefinitions::default();
@@ -143,6 +153,15 @@ impl App {
         theme::configure(&ctx);
         let settings = storage::read_settings(&directory);
         let mut app = Self {
+            tab_mode: !restore,
+            external_blocked: false,
+            tab_action: None,
+            tab_headers: Vec::new(),
+            active_tab: 0,
+            tab_scroll_to_active: true,
+            top_ui_height: 100.0,
+            recovery: directory.join("previous_canvas.icanvas"),
+            reserved_paths: Vec::new(),
             canvas: Canvas {
                 packed: settings.packed,
                 ..Default::default()
@@ -176,7 +195,11 @@ impl App {
             pending_import: None,
         };
         let restoring_unnamed = initial.is_none() && settings.unnamed;
-        let path = initial.or(settings.last).filter(|p| p.exists());
+        let path = if restore {
+            initial.or(settings.last).filter(|p| p.exists())
+        } else {
+            None
+        };
         if let Some(path) = path {
             app.begin_open(path);
             app.opening_unnamed = restoring_unnamed;
@@ -209,10 +232,24 @@ impl App {
         }
     }
     fn date_path(&self) -> PathBuf {
-        storage::next_name(
-            &self.directory,
-            &chrono::Local::now().format("%Y%d%m").to_string(),
-        )
+        let date = chrono::Local::now().format("%Y%d%m").to_string();
+        if !self.tab_mode {
+            return storage::next_name(&self.directory, &date);
+        }
+        for number in 1u64.. {
+            let path = self
+                .directory
+                .join(format!("canvas_{date}_{number:02}.icanvas"));
+            if !path.exists()
+                && !self
+                    .reserved_paths
+                    .iter()
+                    .any(|other| tabs::same_path(other, &path))
+            {
+                return path;
+            }
+        }
+        unreachable!()
     }
     fn save(&mut self, manual: bool, alternate: Option<PathBuf>) {
         if self.job.is_some() || self.open_job.is_some() {
@@ -224,10 +261,23 @@ impl App {
                 if manual {
                     self.date_path()
                 } else {
-                    self.directory.join("previous_canvas.icanvas")
+                    self.recovery.clone()
                 }
             })
         });
+        if self
+            .reserved_paths
+            .iter()
+            .any(|other| tabs::same_path(other, &path))
+        {
+            self.error = Some(
+                self.language
+                    .text("此檔案已在其他分頁使用，請另選保存位置。")
+                    .into(),
+            );
+            return;
+        }
+        let managed = self.tab_mode;
         let canvas = self.canvas.clone();
         let output = path.clone();
         let directory = self.directory.clone();
@@ -236,6 +286,9 @@ impl App {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let result = storage::save(&canvas, &output).and_then(|()| {
+                if managed {
+                    return Ok(());
+                }
                 storage::write_settings(
                     &directory,
                     &Settings {
@@ -244,6 +297,7 @@ impl App {
                         unnamed: !named,
                         random_order,
                         language,
+                        ..Default::default()
                     },
                 )
             });
@@ -270,6 +324,19 @@ impl App {
         self.status = self.language.text("正在開啟版面…").into();
     }
     fn transition(&mut self, after: AfterSave) {
+        if self.tab_mode {
+            match after {
+                AfterSave::New => {
+                    self.tab_action = Some(tabs::Action::New);
+                    return;
+                }
+                AfterSave::Open(path) => {
+                    self.tab_action = Some(tabs::Action::Open(path));
+                    return;
+                }
+                _ => {}
+            }
+        }
         self.finish_drag();
         self.after = after;
         if self.job.is_some() || self.dirty() || !self.saved_once {
@@ -391,16 +458,19 @@ impl App {
                             "Opened · {}",
                             path.display()
                         );
-                        self.message(storage::write_settings(
-                            &self.directory,
-                            &Settings {
-                                packed: self.canvas.packed,
-                                last: Some(path),
-                                unnamed: self.current.is_none(),
-                                random_order: self.random_order,
-                                language: self.language,
-                            },
-                        ));
+                        if !self.tab_mode {
+                            self.message(storage::write_settings(
+                                &self.directory,
+                                &Settings {
+                                    packed: self.canvas.packed,
+                                    last: Some(path),
+                                    unnamed: self.current.is_none(),
+                                    random_order: self.random_order,
+                                    language: self.language,
+                                    ..Default::default()
+                                },
+                            ));
+                        }
                     }
                     Err(e) => {
                         let e = self.language.error(&e);
@@ -719,7 +789,8 @@ impl App {
         if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
             self.toggle_fullscreen(ctx);
         }
-        if ctx.wants_keyboard_input()
+        if self.external_blocked
+            || ctx.wants_keyboard_input()
             || self.open_job.is_some()
             || self.error.is_some()
             || self.settings_open
@@ -779,7 +850,7 @@ impl App {
         }
         let screen = ctx.screen_rect();
         let pointer = ctx.input(|i| i.pointer.hover_pos());
-        let top = pointer.is_some_and(|p| p.y <= screen.top() + 96.0)
+        let top = pointer.is_some_and(|p| p.y <= screen.top() + self.top_ui_height)
             || ctx.memory(|m| m.any_popup_open());
         let bottom = pointer.is_some_and(|p| p.y >= screen.bottom() - 32.0);
         (top, bottom)
@@ -804,7 +875,8 @@ impl App {
         }
     }
     fn toolbar(&mut self, ctx: &egui::Context) {
-        let ready = self.open_job.is_none()
+        let ready = !self.external_blocked
+            && self.open_job.is_none()
             && !self.import_busy()
             && matches!(self.after, AfterSave::None)
             && self.error.is_none();
@@ -847,6 +919,34 @@ impl App {
                                     self.alternate_save();
                                     ui.close_menu();
                                 }
+                            });
+                            ui.add_enabled_ui(ready, |ui| {
+                                ui.menu_button(self.language.text("編輯"), |ui| {
+                                    if ui.button(self.language.text("復原    Ctrl+Z")).clicked() {
+                                        self.undo();
+                                        ui.close_menu();
+                                    }
+                                    if ui.button(self.language.text("重做    Ctrl+Y")).clicked() {
+                                        self.redo();
+                                        ui.close_menu();
+                                    }
+                                    ui.separator();
+                                    ui.add_enabled_ui(!self.selected.is_empty(), |ui| {
+                                        if ui.button(self.language.text("移到最前")).clicked() {
+                                            self.layer(true);
+                                            ui.close_menu();
+                                        }
+                                        if ui.button(self.language.text("移到最後")).clicked() {
+                                            self.layer(false);
+                                            ui.close_menu();
+                                        }
+                                        if ui.button(self.language.text("刪除選取圖片")).clicked()
+                                        {
+                                            self.delete();
+                                            ui.close_menu();
+                                        }
+                                    });
+                                });
                             });
                             ui.separator();
                             if ui.button(self.language.text("匯入圖片")).clicked() {
@@ -899,7 +999,7 @@ impl App {
                         });
                     });
                 });
-            egui::TopBottomPanel::top("document_bar")
+            let document_bar = egui::TopBottomPanel::top("document_bar")
                 .frame(
                     egui::Frame::NONE
                         .fill(theme::BACKGROUND)
@@ -908,62 +1008,101 @@ impl App {
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.set_height(32.0);
-                        let name = self
-                            .current
-                            .as_ref()
-                            .and_then(|p| p.file_name())
-                            .map(|s| s.to_string_lossy().into_owned())
-                            .unwrap_or(self.language.text("未命名版面").into());
-                        ui.label(
-                            egui::RichText::new(if self.dirty() { "●" } else { "○" })
-                                .color(if self.dirty() { ACCENT } else { theme::MUTED }),
-                        )
-                        .on_hover_text(if self.dirty() {
-                            self.language.text("尚有變更")
-                        } else {
-                            self.language.text("已保存")
-                        });
-                        ui.add_sized([170.0, 24.0], egui::Label::new(&name).truncate())
-                            .on_hover_text(&name);
-                        ui.add_enabled_ui(ready, |ui| {
-                            ui.menu_button(self.language.text("編輯"), |ui| {
-                                if ui.button(self.language.text("復原    Ctrl+Z")).clicked() {
-                                    self.undo();
-                                    ui.close_menu();
-                                }
-                                if ui.button(self.language.text("重做    Ctrl+Y")).clicked() {
-                                    self.redo();
-                                    ui.close_menu();
-                                }
-                                ui.separator();
-                                ui.add_enabled_ui(!self.selected.is_empty(), |ui| {
-                                    if ui.button(self.language.text("移到最前")).clicked() {
-                                        self.layer(true);
-                                        ui.close_menu();
-                                    }
-                                    if ui.button(self.language.text("移到最後")).clicked() {
-                                        self.layer(false);
-                                        ui.close_menu();
-                                    }
-                                    if ui.button(self.language.text("刪除選取圖片")).clicked()
-                                    {
-                                        self.delete();
-                                        ui.close_menu();
-                                    }
-                                });
-                            });
-                        });
-                        if !self.selected.is_empty() {
-                            ui.label(
-                                egui::RichText::new(crate::localized!(
-                                    self.language,
-                                    "已選 {} 張",
-                                    "{} selected",
-                                    self.selected.len()
-                                ))
-                                .small()
-                                .color(ACCENT),
+                        if self.tab_mode {
+                            let width = (ui.available_width() - 215.0).max(160.0);
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(width, 32.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    egui::ScrollArea::horizontal().id_salt("tab_strip").show(
+                                        ui,
+                                        |ui| {
+                                            ui.horizontal(|ui| {
+                                                for (index, header) in
+                                                    self.tab_headers.iter().enumerate()
+                                                {
+                                                    ui.push_id(index, |ui| {
+                                                        let label = format!(
+                                                            "{}{}",
+                                                            if header.dirty { "● " } else { "" },
+                                                            header.name
+                                                        );
+                                                        let response = ui.add(
+                                                            egui::Button::new(
+                                                                egui::RichText::new(label)
+                                                                    .size(13.0),
+                                                            )
+                                                            .selected(index == self.active_tab),
+                                                        );
+                                                        if index == self.active_tab
+                                                            && self.tab_scroll_to_active
+                                                        {
+                                                            response.scroll_to_me(Some(
+                                                                egui::Align::Center,
+                                                            ));
+                                                        }
+                                                        if response
+                                                            .on_hover_text(&header.path)
+                                                            .clicked()
+                                                        {
+                                                            self.tab_action =
+                                                                Some(tabs::Action::Select(index));
+                                                        }
+                                                        if ui
+                                                            .small_button("×")
+                                                            .on_hover_text(
+                                                                self.language.text("關閉分頁"),
+                                                            )
+                                                            .clicked()
+                                                        {
+                                                            self.tab_action =
+                                                                Some(tabs::Action::Close(index));
+                                                        }
+                                                    });
+                                                }
+                                                if ui
+                                                    .button("+")
+                                                    .on_hover_text(self.language.text("新建分頁"))
+                                                    .clicked()
+                                                {
+                                                    self.tab_action = Some(tabs::Action::New);
+                                                }
+                                            });
+                                        },
+                                    );
+                                },
                             );
+                            self.tab_scroll_to_active = false;
+                        } else {
+                            let name = self
+                                .current
+                                .as_ref()
+                                .and_then(|p| p.file_name())
+                                .map(|s| s.to_string_lossy().into_owned())
+                                .unwrap_or(self.language.text("未命名版面").into());
+                            ui.label(
+                                egui::RichText::new(if self.dirty() { "●" } else { "○" })
+                                    .color(if self.dirty() { ACCENT } else { theme::MUTED }),
+                            )
+                            .on_hover_text(if self.dirty() {
+                                self.language.text("尚有變更")
+                            } else {
+                                self.language.text("已保存")
+                            });
+                            ui.add_sized([170.0, 24.0], egui::Label::new(&name).truncate())
+                                .on_hover_text(&name);
+                            if !self.selected.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(crate::localized!(
+                                        self.language,
+                                        "已選 {} 張",
+                                        "{} selected",
+                                        self.selected.len()
+                                    ))
+                                    .small()
+                                    .color(ACCENT),
+                                );
+                            }
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
@@ -994,6 +1133,7 @@ impl App {
                         });
                     });
                 });
+            self.top_ui_height = document_bar.response.rect.bottom() - ctx.screen_rect().top();
         }
         if show_bottom {
             egui::TopBottomPanel::bottom("status")
@@ -1034,7 +1174,8 @@ impl App {
         self.canvas_rect = response.rect;
         painter.rect_filled(response.rect, 0.0, theme::BACKGROUND);
         let (top_ui, bottom_ui) = self.toolbar_visibility(ctx);
-        let blocked = (self.fullscreen && (top_ui || bottom_ui))
+        let blocked = self.external_blocked
+            || (self.fullscreen && (top_ui || bottom_ui))
             || self.settings_open
             || self.error.is_some()
             || self.open_job.is_some()
@@ -1634,6 +1775,7 @@ mod tests {
                     ];
                     let required = required.map(|key| language.text(key));
                     let mut found = std::collections::HashSet::new();
+                    let mut rows = std::collections::HashMap::new();
                     for clipped in output.unwrap().shapes {
                         if let egui::Shape::Text(text) = clipped.shape {
                             let label = text.galley.job.text.as_str();
@@ -1647,10 +1789,15 @@ mod tests {
                                     clipped.clip_rect.expand(1.0).contains_rect(bounds),
                                     "{label} clipped at {width}px / {scale}"
                                 );
+                                rows.insert(label.to_owned(), bounds.center().y);
                                 found.insert(label.to_owned());
                             }
                         }
                     }
+                    assert!(
+                        (rows[language.text("檔案")] - rows[language.text("編輯")]).abs() < 1.0,
+                        "File and Edit must share the top row"
+                    );
                     assert_eq!(
                         found.len(),
                         required.len(),

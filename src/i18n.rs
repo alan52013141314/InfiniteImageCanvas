@@ -47,6 +47,18 @@ impl Language {
             return chinese;
         }
         match chinese {
+            "此檔案已在其他分頁使用，請另選保存位置。" => {
+                "This file is used by another tab. Choose a different save location."
+            }
+            "關閉分頁" => "Close tab",
+            "新建分頁" => "New tab",
+            "保存後關閉" => "Save and close",
+            "不保存並關閉" => "Close without saving",
+            "關閉前要保存此分頁嗎？" => "Save this tab before closing?",
+            "不保存只會放棄最近一次保存後的變更。" => {
+                "Discard only changes since the last successful save."
+            }
+            "正在保存所有分頁…" => "Saving all tabs…",
             "將圖片拖入畫布，開始整理" => "Drop images onto the canvas to begin",
             "正在保存…" => "Saving…",
             "正在開啟版面…" => "Opening canvas…",
@@ -155,7 +167,11 @@ mod tests {
     use super::*;
     #[test]
     fn all_static_interface_keys_have_english_translations() {
-        for source in [include_str!("app.rs"), include_str!("theme.rs")] {
+        for source in [
+            include_str!("app.rs"),
+            include_str!("app/tabs.rs"),
+            include_str!("theme.rs"),
+        ] {
             let production = source.split("#[cfg(test)]\nmod tests").next().unwrap();
             for segment in production.split(".text(").skip(1) {
                 if let Some(rest) = segment.trim_start().strip_prefix('"') {

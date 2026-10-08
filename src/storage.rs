@@ -7,8 +7,18 @@ use std::{
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionTab {
+    pub path: Option<PathBuf>,
+    pub recovery: PathBuf,
+    pub unnamed: bool,
+}
 #[derive(Default, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub tabs: Option<Vec<SessionTab>>,
+    #[serde(default)]
+    pub active_tab: usize,
     #[serde(default)]
     pub language: crate::i18n::Language,
     pub packed: bool,

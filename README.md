@@ -4,7 +4,7 @@ A portable Rust image canvas for Windows. Arrange images in an infinite 2D space
 
 ## Download
 
-Get **v0.2.0** from [GitHub Releases](https://github.com/alan52013141314/InfiniteImageCanvas/releases). Extract the archive into a writable folder and launch the executable. Close any older running version before replacing it. Keep your `save file` folder when upgrading.
+Get **v0.3.0** from [GitHub Releases](https://github.com/alan52013141314/InfiniteImageCanvas/releases). Extract the archive into a writable folder and launch the executable. Close any older running version before replacing it. Keep your `save file` folder when upgrading.
 
 Windows 11 x64 is tested. Windows 10 x64 is a compatibility target and has not been tested. An OpenGL 3.3 graphics driver is required. The CRT is statically linked; the executable directly depends only on Windows system DLLs.
 
@@ -17,6 +17,7 @@ Windows 11 x64 is tested. Windows 10 x64 is a compatibility target and has not b
 - Confirm batches larger than 100 images before adding them.
 - Reference original files or embed them into a portable `.icanvas` file.
 - Autosave changed layouts every minute, save on normal close, restore at startup.
+- Independent canvas tabs on the second row; restore all tabs and the active tab. Edit stays on the first row.
 - F11 borderless fullscreen with controls revealed at the top/bottom edges.
 - English / Traditional Chinese, remembered across restarts.
 
@@ -26,8 +27,8 @@ Original image count and resolution have no configured limit; capacity depends o
 
 - [English guide](docs/USER-GUIDE.en.md) / [繁體中文操作說明](docs/USER-GUIDE.md)
 - [Changelog](CHANGELOG.md)
-- [Requirements](docs/PR-001.md) / [v0.2.0 requirements](docs/PR-002.md)
-- [Work plan](docs/WORKPLAN-001.md) / [v0.2.0 plan](docs/WORKPLAN-002.md)
+- [Requirements](docs/PR-001.md) / [v0.3.0 requirements](docs/PR-003.md)
+- [Work plan](docs/WORKPLAN-001.md) / [v0.3.0 plan](docs/WORKPLAN-003.md)
 - [Verification and limitations](docs/VERIFICATION.md)
 - [Third-party notices](THIRD-PARTY-NOTICES.txt)
 

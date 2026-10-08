@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.0 — 2026-10-09
+
+- Move Edit to the top toolbar and add a scrollable second-row tab strip.
+- Keep canvas files, selection, views and undo history independent between tabs.
+- Restore all tabs and the active tab on startup; migrate older settings.
+- Ask Save / Don't save / Cancel when closing a tab; normal application close saves every tab.
+- Autosave changed background tabs and give unnamed tabs separate previous_canvas recovery files.
+- Prevent multiple open tabs from writing to the same save target.
+
 ## v0.2.0 — 2026-10-09
 
 - Add English / Traditional Chinese interface switching with persistent preferences.

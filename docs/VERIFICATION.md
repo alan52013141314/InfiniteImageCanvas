@@ -72,3 +72,10 @@ Windows 11 本機，100／1,000／10,000 個獨立 480×320 PNG 檔；release �
 - 斷電或強制終止只能恢復最近一次成功保存；目前不聲稱其間變更仍可恢復。
 
 以上區分程式驗證、原生操作實測及待驗證環境；不將未執行的驗收項目列為通過。
+## v0.3.0 — 2026-10-09
+
+- 40 automated tests passed; two opt-in load benchmarks were not rerun.
+- New coverage: independent document state and undo history; all-tab restoration and active tab; unique recovery/manual-save targets; old settings migration; duplicate-open selection; close Save/Discard/Cancel; save failure retention; all-tab exit saving.
+- Actual egui pointer events exercise the +, tab selection, ×, Cancel and Save-and-close controls. Both languages render with nine tabs at 720 × 480; existing fullscreen and UI scale regressions pass.
+- Formatting, strict Clippy lint and the Windows x64 release build passed.
+- This version's native window visual inspection was not completed: the desktop tool's launch approval timed out. Earlier native verification in this document refers to earlier versions, not v0.3.0 tabs.

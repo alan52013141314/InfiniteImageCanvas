@@ -35,6 +35,6 @@ fn run() -> eframe::Result {
     eframe::run_native(
         &format!("InfiniteImageCanvas v{}", env!("CARGO_PKG_VERSION")),
         options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, directory, initial)))),
+        Box::new(move |cc| Ok(Box::new(app::Workspace::new(cc, directory, initial)))),
     )
 }
