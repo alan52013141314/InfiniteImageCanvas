@@ -1,0 +1,22 @@
+[package]
+name = "infinite-image-canvas"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+arboard = "3"
+raw-window-handle = "0.6"
+chrono = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+windows-sys = { version = "0.59", features = ["Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
+
+[profile.release]
+opt-level = 2
+strip = true
