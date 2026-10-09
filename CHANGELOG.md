@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.1 — 2026-10-09
+
+- Join the tab label and close control in one continuous outline.
+- Drag tabs to reorder while retaining the active document; persist order on restart.
+- Right-click Rename changes the canvas file name; reject name collisions.
+- Right-click Delete canvas file asks for confirmation before deleting the layout file. The × control still only closes the tab.
+- Keep tabs on file-operation failures and suspend autosave while confirming tab management.
+
 ## v0.3.0 — 2026-10-09
 
 - Move Edit to the top toolbar and add a scrollable second-row tab strip.

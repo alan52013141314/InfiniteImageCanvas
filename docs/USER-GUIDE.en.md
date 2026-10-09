@@ -1,4 +1,4 @@
-# InfiniteImageCanvas v0.3.0
+# InfiniteImageCanvas v0.3.1
 
 Extract the Windows x64 release archive into a writable folder, then run the executable. No server, account, or installation is needed. Windows 11 has been tested; Windows 10 is a compatibility target, not a tested environment. An OpenGL 3.3 graphics driver is required.
 
@@ -49,3 +49,9 @@ Failed saves keep the window and unsaved data available for Retry or another sav
 Reference mode stores original file paths, so keep the originals in place. Embed mode packs originals into one portable canvas file. Clipboard images and extracted embedded images use the managed `assets` directory; keep these assets when using reference mode. If the executable directory is unwritable, select another save location; preference recovery may use the user's local application-data directory.
 
 There is no configured image-count or original-resolution limit. Available memory and graphics hardware still constrain capacity. Display previews may be downsampled (up to 4096 pixels on the longest side); original and embedded file contents are preserved.
+
+## Manage tabs
+
+The label and × share one tab outline. Drag a tab onto another to reorder; order survives restart. Right-click Rename to change the `.icanvas` file name in its current folder. A never-saved tab is saved under the new name. Existing names cannot be overwritten.
+
+Right-click Delete canvas file to review the path and confirm permanent deletion, including discarding unsaved changes. Source images, other tabs, independent backups and asset files remain. The × button only closes a tab. Wait for import, open or save operations to finish before renaming or deleting.

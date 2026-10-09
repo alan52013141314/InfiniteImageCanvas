@@ -1021,44 +1021,23 @@ impl App {
                                                 for (index, header) in
                                                     self.tab_headers.iter().enumerate()
                                                 {
-                                                    ui.push_id(index, |ui| {
-                                                        let label = format!(
-                                                            "{}{}",
-                                                            if header.dirty { "● " } else { "" },
-                                                            header.name
-                                                        );
-                                                        let response = ui.add(
-                                                            egui::Button::new(
-                                                                egui::RichText::new(label)
-                                                                    .size(13.0),
-                                                            )
-                                                            .selected(index == self.active_tab),
-                                                        );
-                                                        if index == self.active_tab
-                                                            && self.tab_scroll_to_active
-                                                        {
-                                                            response.scroll_to_me(Some(
-                                                                egui::Align::Center,
-                                                            ));
-                                                        }
-                                                        if response
-                                                            .on_hover_text(&header.path)
-                                                            .clicked()
-                                                        {
-                                                            self.tab_action =
-                                                                Some(tabs::Action::Select(index));
-                                                        }
-                                                        if ui
-                                                            .small_button("×")
-                                                            .on_hover_text(
-                                                                self.language.text("關閉分頁"),
-                                                            )
-                                                            .clicked()
-                                                        {
-                                                            self.tab_action =
-                                                                Some(tabs::Action::Close(index));
-                                                        }
-                                                    });
+                                                    let (response, action) = tabs::tab_button(
+                                                        ui,
+                                                        index,
+                                                        header,
+                                                        index == self.active_tab,
+                                                        self.language,
+                                                    );
+                                                    if index == self.active_tab
+                                                        && self.tab_scroll_to_active
+                                                    {
+                                                        response.scroll_to_me(Some(
+                                                            egui::Align::Center,
+                                                        ));
+                                                    }
+                                                    if action.is_some() {
+                                                        self.tab_action = action;
+                                                    }
                                                 }
                                                 if ui
                                                     .button("+")

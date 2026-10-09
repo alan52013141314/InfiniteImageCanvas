@@ -51,6 +51,15 @@ impl Language {
                 "This file is used by another tab. Choose a different save location."
             }
             "關閉分頁" => "Close tab",
+            "重新命名" => "Rename",
+            "刪除版面檔案" => "Delete canvas file",
+            "請輸入有效的檔名" => "Enter a valid file name",
+            "此檔名已被使用" => "This file name is already in use",
+            "確認刪除" => "Confirm deletion",
+            "確認改名" => "Confirm rename",
+            "將刪除版面檔案及放棄此分頁的變更，無法復原。來源圖片會保留。" => {
+                "Delete this canvas file and discard this tab's changes permanently. Source images will be kept."
+            }
             "新建分頁" => "New tab",
             "保存後關閉" => "Save and close",
             "不保存並關閉" => "Close without saving",

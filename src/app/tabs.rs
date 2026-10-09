@@ -5,6 +5,9 @@ pub(super) enum Action {
     Open(PathBuf),
     Select(usize),
     Close(usize),
+    Reorder(usize, usize),
+    Rename(usize),
+    Delete(usize),
 }
 pub(super) struct Header {
     pub name: String,
@@ -25,6 +28,7 @@ pub struct Workspace {
     paste: Arc<AtomicBool>,
     fullscreen: bool,
     closing: Option<Closing>,
+    managing: Option<(usize, bool, String)>,
     exiting: bool,
     allow_exit: bool,
     last_settings: Vec<u8>,
@@ -63,6 +67,7 @@ impl Workspace {
             paste: Arc::new(AtomicBool::new(false)),
             fullscreen: false,
             closing: None,
+            managing: None,
             exiting: false,
             allow_exit: false,
             last_settings: Vec::new(),
@@ -302,12 +307,15 @@ impl Workspace {
         // All document jobs and autosave clocks progress, including inactive tabs.
         self.refresh_headers();
         for (index, tab) in self.tabs.iter_mut().enumerate() {
-            if matches!(self.closing, Some(Closing::Prompt(i)) if i == index) {
+            if matches!(self.closing, Some(Closing::Prompt(i)) if i == index)
+                || self.managing.as_ref().is_some_and(|(i, _, _)| *i == index)
+            {
                 tab.timer = Instant::now();
             }
             tab.poll(&self.ctx);
         }
         if self.closing.is_none()
+            && self.managing.is_none()
             && !self.exiting
             && self.tabs[self.active].error.is_none()
             && let Some(index) = self.tabs.iter().position(|tab| tab.error.is_some())
@@ -355,6 +363,42 @@ impl Workspace {
             Action::Open(path) => self.open(path),
             Action::Select(index) => self.activate(index),
             Action::Close(index) => self.request_close(index),
+            Action::Rename(index) | Action::Delete(index) => {
+                self.activate(index);
+                if self.tabs[index].job.is_none()
+                    && self.tabs[index].open_job.is_none()
+                    && !self.tabs[index].import_busy()
+                {
+                    let path = self.tabs[index]
+                        .current
+                        .as_ref()
+                        .unwrap_or(&self.tabs[index].recovery);
+                    self.managing = Some((
+                        index,
+                        matches!(action, Action::Delete(_)),
+                        path.file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned(),
+                    ));
+                }
+            }
+            Action::Reorder(from, to) => {
+                if from != to && from < self.tabs.len() && to < self.tabs.len() {
+                    self.tabs[self.active].finish_drag();
+                    let tab = self.tabs.remove(from);
+                    self.tabs.insert(to, tab);
+                    self.active = if self.active == from {
+                        to
+                    } else if from < self.active && to >= self.active {
+                        self.active - 1
+                    } else if from > self.active && to <= self.active {
+                        self.active + 1
+                    } else {
+                        self.active
+                    };
+                }
+            }
         }
         self.refresh_headers();
         self.persist();
@@ -411,6 +455,7 @@ impl Workspace {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             if self.closing.is_none()
+                && self.managing.is_none()
                 && self
                     .tabs
                     .iter()
@@ -423,7 +468,7 @@ impl Workspace {
             }
         }
         self.refresh_headers();
-        let blocked = self.closing.is_some() || self.exiting;
+        let blocked = self.closing.is_some() || self.managing.is_some() || self.exiting;
         if !blocked {
             self.tabs[self.active].shortcuts(ctx);
         } else if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
@@ -441,6 +486,7 @@ impl Workspace {
             self.tabs[self.active].tab_action = None;
         }
         self.close_dialog(ctx);
+        self.manage_dialog(ctx);
         if self.exiting {
             egui::Window::new(self.tabs[self.active].language.text("正在保存所有分頁…"))
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
@@ -456,6 +502,211 @@ impl Workspace {
 impl eframe::App for Workspace {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.update_ui(ctx);
+    }
+}
+
+pub(super) fn tab_button(
+    ui: &mut egui::Ui,
+    index: usize,
+    header: &Header,
+    active: bool,
+    language: crate::i18n::Language,
+) -> (egui::Response, Option<Action>) {
+    let label = format!("{}{}", if header.dirty { "● " } else { "" }, header.name);
+    let galley = ui.painter().layout_no_wrap(
+        label,
+        egui::FontId::proportional(13.0),
+        ui.visuals().text_color(),
+    );
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(galley.size().x + 44.0, 30.0), Sense::hover());
+    let close_rect = Rect::from_min_max(Pos2::new(rect.max.x - 28.0, rect.min.y), rect.max);
+    let name_rect = Rect::from_min_max(rect.min, Pos2::new(close_rect.min.x, rect.max.y));
+    let response = ui.interact(
+        name_rect,
+        ui.id().with(("tab", index)),
+        Sense::click_and_drag(),
+    );
+    let close = ui.interact(
+        close_rect,
+        ui.id().with(("tab_close", index)),
+        Sense::click(),
+    );
+    let whole = ui.interact(rect, ui.id().with(("tab_drop", index)), Sense::hover());
+    let fill = if active {
+        ui.visuals().selection.bg_fill
+    } else if whole.hovered() {
+        ui.visuals().widgets.hovered.bg_fill
+    } else {
+        ui.visuals().widgets.inactive.bg_fill
+    };
+    ui.painter().rect(
+        rect,
+        5.0,
+        fill,
+        Stroke::new(
+            1.0_f32,
+            if active {
+                ACCENT
+            } else {
+                ui.visuals().widgets.inactive.bg_stroke.color
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(
+        Pos2::new(rect.min.x + 10.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        ui.visuals().text_color(),
+    );
+    if close.hovered() {
+        ui.painter().rect_filled(
+            close_rect.shrink(3.0),
+            3.0,
+            ui.visuals().widgets.hovered.bg_fill,
+        );
+    }
+    ui.painter().text(
+        close_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "×",
+        egui::FontId::proportional(14.0),
+        ui.visuals().text_color(),
+    );
+    let mut action = response.clicked().then_some(Action::Select(index));
+    if close.on_hover_text(language.text("關閉分頁")).clicked() {
+        action = Some(Action::Close(index));
+    }
+    response.dnd_set_drag_payload(index);
+    if let Some(from) = whole.dnd_hover_payload::<usize>()
+        && *from != index
+    {
+        let x = if *from < index {
+            rect.right()
+        } else {
+            rect.left()
+        };
+        ui.painter().line_segment(
+            [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
+            Stroke::new(2.0_f32, ACCENT),
+        );
+    }
+    if let Some(from) = whole.dnd_release_payload::<usize>() {
+        action = Some(Action::Reorder(*from, index));
+    }
+    response.context_menu(|ui| {
+        if ui.button(language.text("重新命名")).clicked() {
+            action = Some(Action::Rename(index));
+            ui.close_menu();
+        }
+        if ui.button(language.text("刪除版面檔案")).clicked() {
+            action = Some(Action::Delete(index));
+            ui.close_menu();
+        }
+    });
+    (response.on_hover_text(&header.path), action)
+}
+
+impl Workspace {
+    fn rename_file(&mut self, index: usize, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty()
+            || name.ends_with('.')
+            || name
+                .chars()
+                .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+        {
+            return Err(self.tabs[index].language.text("請輸入有效的檔名").into());
+        }
+        let tab = &mut self.tabs[index];
+        let old = tab.current.as_ref().unwrap_or(&tab.recovery).clone();
+        let new = old.with_file_name(format!(
+            "{}.icanvas",
+            name.strip_suffix(".icanvas").unwrap_or(name)
+        ));
+        if new == old {
+            return Ok(());
+        }
+        if new.exists() || tab.reserved_paths.iter().any(|p| same_path(p, &new)) {
+            return Err(tab.language.text("此檔名已被使用").into());
+        }
+        if old.exists() || tab.saved_once {
+            std::fs::rename(&old, &new).map_err(storage::error)?;
+        }
+        tab.current = Some(new);
+        if !tab.saved_once {
+            tab.save(true, None);
+        }
+        Ok(())
+    }
+    fn delete_file(&mut self, index: usize) -> Result<(), String> {
+        let tab = &self.tabs[index];
+        let path = tab.current.as_ref().unwrap_or(&tab.recovery);
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(storage::error(e)),
+        }
+        self.remove(index);
+        Ok(())
+    }
+    fn manage_dialog(&mut self, ctx: &egui::Context) {
+        let Some((index, deleting, mut name)) = self.managing.take() else {
+            return;
+        };
+        self.tabs[index].timer = Instant::now();
+        let language = self.tabs[index].language;
+        let mut confirm = false;
+        let mut cancel = false;
+        egui::Window::new(language.text(if deleting {
+            "刪除版面檔案"
+        } else {
+            "重新命名"
+        }))
+        .id(egui::Id::new("manage_tab"))
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            if deleting {
+                ui.label(
+                    language.text("將刪除版面檔案及放棄此分頁的變更，無法復原。來源圖片會保留。"),
+                );
+                ui.label(
+                    self.tabs[index]
+                        .current
+                        .as_ref()
+                        .unwrap_or(&self.tabs[index].recovery)
+                        .display()
+                        .to_string(),
+                );
+            } else {
+                ui.text_edit_singleline(&mut name);
+            }
+            ui.horizontal(|ui| {
+                confirm = ui
+                    .button(language.text(if deleting {
+                        "確認刪除"
+                    } else {
+                        "確認改名"
+                    }))
+                    .clicked();
+                cancel = ui.button(language.text("取消")).clicked();
+            });
+        });
+        if confirm {
+            let result = if deleting {
+                self.delete_file(index)
+            } else {
+                self.rename_file(index, &name)
+            };
+            if let Err(error) = result {
+                self.tabs[index].error = Some(error);
+            }
+            self.refresh_headers();
+            self.persist();
+        } else if !cancel {
+            self.managing = Some((index, deleting, name));
+        }
     }
 }
 
@@ -538,6 +789,122 @@ mod tests {
             );
         }
         ui_frame(w, Vec::new())
+    }
+    #[test]
+    fn failed_file_operations_keep_tab_and_dialog_suspends_autosave() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 10.0);
+        w.tabs[0].save(false, None);
+        settle(&mut w);
+        let old = w.tabs[0].recovery.clone();
+        std::fs::remove_file(&old).unwrap();
+        assert!(w.rename_file(0, "Missing").is_err());
+        assert!(w.tabs[0].current.is_none());
+        std::fs::create_dir(&old).unwrap();
+        assert!(w.delete_file(0).is_err());
+        assert_eq!(w.tabs.len(), 1);
+        w.handle_action(Action::Delete(0));
+        add_item(&mut w.tabs[0], 20.0);
+        w.tabs[0].timer = Instant::now() - Duration::from_secs(61);
+        w.poll();
+        assert!(w.tabs[0].job.is_none());
+        assert!(w.managing.is_some());
+    }
+    #[test]
+    fn pointer_drag_reorders_and_context_menu_confirms_deletion() {
+        let (_dir, mut w) = setup();
+        w.tabs[0].language = crate::i18n::Language::English;
+        add_item(&mut w.tabs[0], 10.0);
+        w.add_new();
+        add_item(&mut w.tabs[1], 20.0);
+        ui_frame(&mut w, vec![]);
+        let output = ui_frame(&mut w, vec![]);
+        let from = text_position(&output, "● Untitled canvas 2");
+        let to = text_position(&output, "● Untitled canvas 1");
+        ui_frame(
+            &mut w,
+            vec![
+                egui::Event::PointerMoved(from),
+                egui::Event::PointerButton {
+                    pos: from,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+        ui_frame(&mut w, vec![egui::Event::PointerMoved(to)]);
+        ui_frame(&mut w, vec![egui::Event::PointerMoved(to)]);
+        ui_frame(
+            &mut w,
+            vec![egui::Event::PointerButton {
+                pos: to,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            }],
+        );
+        assert_eq!(w.tabs[0].canvas.items[0].position[0], 20.0);
+        assert_eq!(w.active, 0);
+        let output = ui_frame(&mut w, vec![]);
+        let at = text_position(&output, "● Untitled canvas 1");
+        for pressed in [true, false] {
+            ui_frame(
+                &mut w,
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        let output = ui_frame(&mut w, vec![]);
+        assert!(text_position(&output, "Rename").x > 0.0);
+        let output = click(&mut w, text_position(&output, "Delete canvas file"));
+        assert!(
+            w.managing
+                .as_ref()
+                .is_some_and(|(_, deleting, _)| *deleting)
+        );
+        click(&mut w, text_position(&output, "Cancel"));
+        assert!(w.managing.is_none());
+        assert_eq!(w.tabs.len(), 2);
+    }
+    #[test]
+    fn rename_delete_and_reorder_persist_without_mixing_documents() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 10.0);
+        w.tabs[0].save(false, None);
+        settle(&mut w);
+        let old = w.tabs[0].recovery.clone();
+        w.rename_file(0, "Renamed").unwrap();
+        let renamed = w.tabs[0].current.clone().unwrap();
+        assert!(!old.exists());
+        assert!(renamed.exists());
+        w.add_new();
+        add_item(&mut w.tabs[1], 20.0);
+        assert!(w.rename_file(1, "Renamed").is_err());
+        assert!(w.rename_file(1, "../bad").is_err());
+        w.tabs[1].save(false, None);
+        settle(&mut w);
+        let second = w.tabs[1].recovery.clone();
+        w.handle_action(Action::Reorder(0, 1));
+        assert_eq!(w.active, 0);
+        assert_eq!(w.tabs[0].canvas.items[0].position[0], 20.0);
+        let mut restored =
+            Workspace::initialize(egui::Context::default(), w.directory.clone(), None);
+        settle(&mut restored);
+        assert_eq!(restored.active, 0);
+        assert_eq!(restored.tabs[1].current.as_ref(), Some(&renamed));
+        assert_eq!(restored.tabs[0].canvas.items[0].position[0], 20.0);
+        restored.delete_file(1).unwrap();
+        assert!(!renamed.exists());
+        assert!(second.exists());
+        assert_eq!(restored.tabs.len(), 1);
     }
     #[test]
     fn real_tab_buttons_new_switch_close_cancel_and_save() {

@@ -79,3 +79,9 @@ Windows 11 本機，100／1,000／10,000 個獨立 480×320 PNG 檔；release �
 - Actual egui pointer events exercise the +, tab selection, ×, Cancel and Save-and-close controls. Both languages render with nine tabs at 720 × 480; existing fullscreen and UI scale regressions pass.
 - Formatting, strict Clippy lint and the Windows x64 release build passed.
 - This version's native window visual inspection was not completed: the desktop tool's launch approval timed out. Earlier native verification in this document refers to earlier versions, not v0.3.0 tabs.
+
+## v0.3.1 — 2026-10-09
+
+43 automated tests passed; formatting, strict lint and release build passed. Two opt-in load benchmarks not rerun. New tests cover pointer drag reorder, right-click menu and deletion cancellation, actual file rename/deletion, collisions, missing-file rename and failed deletion retention, management-dialog autosave suspension, and restart order/active document.
+
+The native Windows v0.3.1 test window was inspected: label and × now share one outline, with separate tabs and + spaced cleanly. Native right-click/deletion interaction was not fully exercised because user input interrupted the desktop session; these paths were verified with egui event and filesystem tests.
