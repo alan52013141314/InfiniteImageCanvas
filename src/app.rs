@@ -86,6 +86,7 @@ pub struct App {
     tab_mode: bool,
     external_blocked: bool,
     tab_action: Option<tabs::Action>,
+    image_menu: Option<u64>,
     tab_headers: Vec<tabs::Header>,
     active_tab: usize,
     tab_scroll_to_active: bool,
@@ -156,6 +157,7 @@ impl App {
             tab_mode: !restore,
             external_blocked: false,
             tab_action: None,
+            image_menu: None,
             tab_headers: Vec::new(),
             active_tab: 0,
             tab_scroll_to_active: true,
@@ -1161,7 +1163,41 @@ impl App {
             || self.import_busy()
             || !matches!(self.after, AfterSave::None);
         let pointer = ctx.input(|i| i.pointer.hover_pos());
-        if !blocked {
+        if !blocked && response.secondary_clicked() {
+            self.finish_drag();
+            self.image_menu = response.interact_pointer_pos().and_then(|p| {
+                self.canvas
+                    .items
+                    .iter()
+                    .rev()
+                    .find(|item| self.rect(item).contains(p))
+                    .map(|item| item.id)
+            });
+        }
+        if !blocked && let Some(id) = self.image_menu {
+            response.context_menu(|ui| {
+                if ui.button(self.language.text("移除圖片")).clicked() {
+                    self.selected = [id].into_iter().collect();
+                    self.delete();
+                    ui.close_menu();
+                }
+                for (label, front) in [("移到最前", true), ("移到最後", false)] {
+                    if ui.button(self.language.text(label)).clicked() {
+                        self.selected = [id].into_iter().collect();
+                        self.layer(front);
+                        ui.close_menu();
+                    }
+                }
+                ui.separator();
+                if ui.button("Source delete").clicked() {
+                    if let Some(item) = self.canvas.items.iter().find(|item| item.id == id) {
+                        self.tab_action = Some(tabs::Action::SourceDelete(item.source.clone()));
+                    }
+                    ui.close_menu();
+                }
+            });
+        }
+        if !blocked && !response.context_menu_opened() {
             if let Some(p) = pointer.filter(|p| response.rect.contains(*p)) {
                 let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
                 if scroll != 0.0 {

@@ -8,6 +8,7 @@ pub(super) enum Action {
     Reorder(usize, usize),
     Rename(usize),
     Delete(usize),
+    SourceDelete(PathBuf),
 }
 pub(super) struct Header {
     pub name: String,
@@ -29,6 +30,7 @@ pub struct Workspace {
     fullscreen: bool,
     closing: Option<Closing>,
     managing: Option<(usize, bool, String)>,
+    source_delete: Option<PathBuf>,
     exiting: bool,
     allow_exit: bool,
     last_settings: Vec<u8>,
@@ -68,6 +70,7 @@ impl Workspace {
             fullscreen: false,
             closing: None,
             managing: None,
+            source_delete: None,
             exiting: false,
             allow_exit: false,
             last_settings: Vec::new(),
@@ -309,6 +312,7 @@ impl Workspace {
         for (index, tab) in self.tabs.iter_mut().enumerate() {
             if matches!(self.closing, Some(Closing::Prompt(i)) if i == index)
                 || self.managing.as_ref().is_some_and(|(i, _, _)| *i == index)
+                || self.source_delete.is_some()
             {
                 tab.timer = Instant::now();
             }
@@ -316,6 +320,7 @@ impl Workspace {
         }
         if self.closing.is_none()
             && self.managing.is_none()
+            && self.source_delete.is_none()
             && !self.exiting
             && self.tabs[self.active].error.is_none()
             && let Some(index) = self.tabs.iter().position(|tab| tab.error.is_some())
@@ -363,6 +368,7 @@ impl Workspace {
             Action::Open(path) => self.open(path),
             Action::Select(index) => self.activate(index),
             Action::Close(index) => self.request_close(index),
+            Action::SourceDelete(path) => self.source_delete = Some(path),
             Action::Rename(index) | Action::Delete(index) => {
                 self.activate(index);
                 if self.tabs[index].job.is_none()
@@ -456,6 +462,7 @@ impl Workspace {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             if self.closing.is_none()
                 && self.managing.is_none()
+                && self.source_delete.is_none()
                 && self
                     .tabs
                     .iter()
@@ -468,7 +475,10 @@ impl Workspace {
             }
         }
         self.refresh_headers();
-        let blocked = self.closing.is_some() || self.managing.is_some() || self.exiting;
+        let blocked = self.closing.is_some()
+            || self.managing.is_some()
+            || self.source_delete.is_some()
+            || self.exiting;
         if !blocked {
             self.tabs[self.active].shortcuts(ctx);
         } else if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
@@ -487,6 +497,7 @@ impl Workspace {
         }
         self.close_dialog(ctx);
         self.manage_dialog(ctx);
+        self.source_delete_dialog(ctx);
         if self.exiting {
             egui::Window::new(self.tabs[self.active].language.text("正在保存所有分頁…"))
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
@@ -710,6 +721,108 @@ impl Workspace {
     }
 }
 
+impl Workspace {
+    fn source_delete_ready(&self) -> bool {
+        self.tabs
+            .iter()
+            .all(|tab| tab.job.is_none() && tab.open_job.is_none() && !tab.import_busy())
+    }
+    fn delete_source(&mut self, path: &std::path::Path) -> Result<(), String> {
+        if !self.source_delete_ready() {
+            return Err(self.tabs[self.active]
+                .language
+                .text("請等待匯入或保存完成")
+                .into());
+        }
+        let aliases: HashSet<PathBuf> = self
+            .tabs
+            .iter()
+            .flat_map(|tab| tab.canvas.items.iter())
+            .filter(|item| same_path(&item.source, path))
+            .map(|item| item.source.clone())
+            .collect();
+        // Never change document state until the filesystem operation has succeeded.
+        std::fs::remove_file(path).map_err(storage::error)?;
+        for tab in &mut self.tabs {
+            tab.finish_drag();
+            let matches =
+                |item: &Item| aliases.contains(&item.source) || same_path(&item.source, path);
+            let before = tab.canvas.items.len();
+            tab.canvas.items.retain(|item| !matches(item));
+            tab.history.retain_items(|item| !matches(item));
+            tab.selected
+                .retain(|id| tab.canvas.items.iter().any(|item| item.id == *id));
+            tab.image_menu = None;
+            if tab.canvas.items.len() != before {
+                tab.previews.clear();
+                tab.decoder = media::Decoder::new(self.ctx.clone());
+                tab.changed();
+            }
+        }
+        self.refresh_headers();
+        Ok(())
+    }
+    fn source_delete_dialog(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.source_delete.clone() else {
+            return;
+        };
+        let language = self.tabs[self.active].language;
+        let counts: Vec<usize> = self
+            .tabs
+            .iter()
+            .map(|tab| {
+                tab.canvas
+                    .items
+                    .iter()
+                    .filter(|item| same_path(&item.source, &path))
+                    .count()
+            })
+            .collect();
+        let ready = self.source_delete_ready();
+        let mut confirm = false;
+        let mut cancel = false;
+        egui::Window::new("Source delete")
+            .id(egui::Id::new("source_delete_confirmation"))
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.set_max_width(520.0);
+                ui.label(
+                    language.text("永久刪除以下來源檔案，並移除所有已開啟分頁中引用它的圖片。"),
+                );
+                ui.label(path.display().to_string());
+                ui.label(crate::localized!(
+                    language,
+                    "影響 {} 個分頁、{} 張圖片",
+                    "Affects {} tabs and {} images",
+                    counts.iter().filter(|n| **n > 0).count(),
+                    counts.iter().sum::<usize>()
+                ));
+                ui.label(
+                    language.text("此操作無法復原來源檔案；未開啟的版面及既有封裝備份不會改寫。"),
+                );
+                if !ready {
+                    ui.label(language.text("請等待匯入或保存完成"));
+                }
+                ui.horizontal(|ui| {
+                    confirm = ui
+                        .add_enabled(ready, egui::Button::new(language.text("確認刪除")))
+                        .clicked();
+                    cancel = ui.button(language.text("取消")).clicked();
+                });
+            });
+        if cancel {
+            self.source_delete = None;
+        }
+        if confirm {
+            if let Err(error) = self.delete_source(&path) {
+                self.tabs[self.active].error = Some(error);
+            }
+            self.source_delete = None;
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -789,6 +902,134 @@ mod tests {
             );
         }
         ui_frame(w, Vec::new())
+    }
+    #[test]
+    fn source_delete_waits_for_saves_and_suspends_all_autosave_clocks() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 10.0);
+        let source = w.tabs[0].canvas.items[0].source.clone();
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"source").unwrap();
+        w.tabs[0].save(false, None);
+        w.add_new();
+        add_item(&mut w.tabs[1], 20.0);
+        w.handle_action(Action::SourceDelete(source.clone()));
+        assert!(!w.source_delete_ready());
+        assert!(w.delete_source(&source).is_err());
+        assert!(source.exists());
+        w.tabs[1].timer = Instant::now() - Duration::from_secs(61);
+        w.poll();
+        assert!(w.tabs[1].job.is_none());
+        settle(&mut w);
+        assert!(w.source_delete_ready());
+        w.delete_source(&source).unwrap();
+        assert!(w.tabs.iter().all(|tab| tab.canvas.items.is_empty()));
+    }
+    #[test]
+    fn source_delete_removes_all_open_references_and_cannot_be_undone() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 10.0);
+        let source = w.tabs[0].canvas.items[0].source.clone();
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"source").unwrap();
+        let keep = source.with_file_name("keep.png");
+        std::fs::write(&keep, b"keep").unwrap();
+        w.add_new();
+        add_item(&mut w.tabs[1], 20.0);
+        let before = w.tabs[1].canvas.items.clone();
+        let mut other = before[0].clone();
+        other.id = 2;
+        other.source = keep.clone();
+        w.tabs[1].canvas.items.push(other);
+        let after = w.tabs[1].canvas.items.clone();
+        w.tabs[1].history.commit(before, &after);
+        w.tabs[1].undo();
+        w.tabs[1].redo();
+        w.delete_source(&source).unwrap();
+        assert!(!source.exists());
+        assert!(keep.exists());
+        assert!(w.tabs[0].canvas.items.is_empty());
+        assert_eq!(w.tabs[1].canvas.items.len(), 1);
+        for tab in &mut w.tabs {
+            tab.undo();
+            tab.redo();
+            assert!(tab.canvas.items.iter().all(|item| item.source != source));
+            tab.save(false, None);
+        }
+        settle(&mut w);
+        let mut restored =
+            Workspace::initialize(egui::Context::default(), w.directory.clone(), None);
+        settle(&mut restored);
+        assert!(
+            restored.tabs.iter().all(|tab| tab
+                .canvas
+                .items
+                .iter()
+                .all(|item| item.source != source))
+        );
+    }
+    #[test]
+    fn source_delete_failure_preserves_images_and_packed_delete_targets_asset() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 10.0);
+        let source = w.tabs[0].canvas.items[0].source.clone();
+        assert!(w.delete_source(&source).is_err());
+        assert_eq!(w.tabs[0].canvas.items.len(), 1);
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"original").unwrap();
+        w.tabs[0].canvas.packed = true;
+        let packed = w.directory.join("packed.icanvas");
+        storage::save(&w.tabs[0].canvas, &packed).unwrap();
+        w.tabs[0].canvas = storage::load(&packed, &w.directory.join("assets")).unwrap();
+        let asset = w.tabs[0].canvas.items[0].source.clone();
+        assert_ne!(asset, source);
+        w.delete_source(&asset).unwrap();
+        assert!(source.exists());
+        assert!(!asset.exists());
+        assert!(packed.exists());
+        assert!(w.tabs[0].canvas.items.is_empty());
+    }
+    #[test]
+    fn image_right_click_targets_topmost_and_source_delete_requires_confirmation() {
+        let (_dir, mut w) = setup();
+        w.tabs[0].language = crate::i18n::Language::English;
+        add_item(&mut w.tabs[0], 10.0);
+        let source = w.tabs[0].canvas.items[0].source.clone();
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"fixture").unwrap();
+        let mut top = w.tabs[0].canvas.items[0].clone();
+        top.id = 2;
+        w.tabs[0].canvas.items.push(top);
+        ui_frame(&mut w, vec![]);
+        let at = w.tabs[0].rect(&w.tabs[0].canvas.items[1]).center();
+        for pressed in [true, false] {
+            ui_frame(
+                &mut w,
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        assert_eq!(w.tabs[0].image_menu, Some(2));
+        let output = ui_frame(&mut w, vec![]);
+        assert!(text_position(&output, "Remove image").x > 0.0);
+        let output = click(&mut w, text_position(&output, "Source delete"));
+        assert!(w.source_delete.is_some());
+        assert!(source.exists());
+        click(&mut w, text_position(&output, "Cancel"));
+        assert!(w.source_delete.is_none());
+        assert_eq!(w.tabs[0].canvas.items.len(), 2);
+        w.handle_action(Action::SourceDelete(source.clone()));
+        let output = ui_frame(&mut w, vec![]);
+        click(&mut w, text_position(&output, "Confirm deletion"));
+        assert!(!source.exists());
+        assert!(w.tabs[0].canvas.items.is_empty());
     }
     #[test]
     fn failed_file_operations_keep_tab_and_dialog_suspends_autosave() {

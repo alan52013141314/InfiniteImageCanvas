@@ -1,4 +1,4 @@
-# InfiniteImageCanvas v0.3.1
+# InfiniteImageCanvas v0.3.2
 
 Extract the Windows x64 release archive into a writable folder, then run the executable. No server, account, or installation is needed. Windows 11 has been tested; Windows 10 is a compatibility target, not a tested environment. An OpenGL 3.3 graphics driver is required.
 
@@ -55,3 +55,11 @@ There is no configured image-count or original-resolution limit. Available memor
 The label and × share one tab outline. Drag a tab onto another to reorder; order survives restart. Right-click Rename to change the `.icanvas` file name in its current folder. A never-saved tab is saved under the new name. Existing names cannot be overwritten.
 
 Right-click Delete canvas file to review the path and confirm permanent deletion, including discarding unsaved changes. Source images, other tabs, independent backups and asset files remain. The × button only closes a tab. Wait for import, open or save operations to finish before renaming or deleting.
+
+## Image context menu
+
+Right-click the topmost image to Remove image, Bring to front, Send to back, or Source delete. Remove image only removes the canvas item and keeps the file.
+
+Source delete shows the actual path and affected open-tab/image counts before permanently deleting that file and removing its references from every open tab. Undo/Redo will not restore those references. File deletion failure preserves the images. Changed tabs continue using normal manual/autosave/close saving.
+
+Reopened embedded images and clipboard images use managed assets: the displayed current asset is deleted, not an unknown external original. Closed canvas files and existing packed backups are not rewritten. Confirmation is disabled while import/open/save work is pending; cancel the dialog to finish or cancel that work first.

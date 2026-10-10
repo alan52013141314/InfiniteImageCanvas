@@ -85,3 +85,7 @@ Windows 11 本機，100／1,000／10,000 個獨立 480×320 PNG 檔；release �
 43 automated tests passed; formatting, strict lint and release build passed. Two opt-in load benchmarks not rerun. New tests cover pointer drag reorder, right-click menu and deletion cancellation, actual file rename/deletion, collisions, missing-file rename and failed deletion retention, management-dialog autosave suspension, and restart order/active document.
 
 The native Windows v0.3.1 test window was inspected: label and × now share one outline, with separate tabs and + spaced cleanly. Native right-click/deletion interaction was not fully exercised because user input interrupted the desktop session; these paths were verified with egui event and filesystem tests.
+
+## v0.3.2 — 2026-10-10
+
+47 automated tests pass; formatting and strict lint pass. New tests cover real egui image right-click, topmost-image targeting, cancel/confirm, actual temporary source deletion, all-open-tab cleanup, undo/redo and restart, failure retention, packed assets and pending-save exclusion. Source deletion tests touch temporary fixtures only. Native window interaction was not tested in this round. Two optional load benchmarks were not rerun.

@@ -117,6 +117,11 @@ pub struct History {
     redo: Vec<Vec<Item>>,
 }
 impl History {
+    pub fn retain_items(&mut self, mut keep: impl FnMut(&Item) -> bool) {
+        for items in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            items.retain(&mut keep);
+        }
+    }
     pub fn commit(&mut self, before: Vec<Item>, after: &[Item]) {
         if before != after {
             self.undo.push(before);

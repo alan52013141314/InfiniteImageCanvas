@@ -51,6 +51,14 @@ impl Language {
                 "This file is used by another tab. Choose a different save location."
             }
             "關閉分頁" => "Close tab",
+            "移除圖片" => "Remove image",
+            "請等待匯入或保存完成" => "Wait for import or save operations to finish",
+            "永久刪除以下來源檔案，並移除所有已開啟分頁中引用它的圖片。" => {
+                "Permanently delete this source file and remove its images from all open tabs."
+            }
+            "此操作無法復原來源檔案；未開啟的版面及既有封裝備份不會改寫。" => {
+                "The source file cannot be restored by Undo. Closed canvases and existing packed backups are not rewritten."
+            }
             "重新命名" => "Rename",
             "刪除版面檔案" => "Delete canvas file",
             "請輸入有效的檔名" => "Enter a valid file name",

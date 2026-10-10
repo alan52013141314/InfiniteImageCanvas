@@ -4,7 +4,7 @@ A portable Rust image canvas for Windows. Arrange images in an infinite 2D space
 
 ## Download
 
-Get **v0.3.1** from [GitHub Releases](https://github.com/alan52013141314/InfiniteImageCanvas/releases). Extract the archive into a writable folder and launch the executable. Close any older running version before replacing it. Keep your `save file` folder when upgrading.
+Get **v0.3.2** from [GitHub Releases](https://github.com/alan52013141314/InfiniteImageCanvas/releases). Extract the archive into a writable folder and launch the executable. Close any older running version before replacing it. Keep your `save file` folder when upgrading.
 
 Windows 11 x64 is tested. Windows 10 x64 is a compatibility target and has not been tested. An OpenGL 3.3 graphics driver is required. The CRT is statically linked; the executable directly depends only on Windows system DLLs.
 
@@ -27,8 +27,8 @@ Original image count and resolution have no configured limit; capacity depends o
 
 - [English guide](docs/USER-GUIDE.en.md) / [繁體中文操作說明](docs/USER-GUIDE.md)
 - [Changelog](CHANGELOG.md)
-- [Requirements](docs/PR-001.md) / [v0.3.1 requirements](docs/PR-004.md)
-- [Work plan](docs/WORKPLAN-001.md) / [v0.3.1 plan](docs/WORKPLAN-004.md)
+- [Requirements](docs/PR-001.md) / [v0.3.2 requirements](docs/PR-005.md)
+- [Work plan](docs/WORKPLAN-001.md) / [v0.3.2 plan](docs/WORKPLAN-005.md)
 - [Verification and limitations](docs/VERIFICATION.md)
 - [Third-party notices](THIRD-PARTY-NOTICES.txt)
 

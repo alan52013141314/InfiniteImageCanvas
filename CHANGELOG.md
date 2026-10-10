@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.2 — 2026-10-10
+
+- Add an image context menu with canvas-only removal, layer controls and Source delete.
+- Confirm the exact source path and affected counts before deleting the file and removing references from all open tabs.
+- Preserve images on deletion failure; wait for pending import/open/save work and suspend autosave during confirmation.
+- Remove deleted-source references from undo/redo history; retain unrelated images and history.
+- Support managed source assets used by clipboard and reopened packed images.
+
 ## v0.3.1 — 2026-10-09
 
 - Join the tab label and close control in one continuous outline.
