@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0 — 2026-10-11
+
+- Optional nearest-first background preloading with a persistent extra-preview memory budget; keep viewport-only loading as default.
+- Add Settings and undoable Gather here / Gather at image center to blank-canvas right-click.
+- Add independent vertical/horizontal comic reading modes to tab right-click, preserving original layout and view.
+- Reading wheel scroll, Ctrl+wheel zoom, directional previous/next navigation and session restoration.
+- Preserve existing source deletion, saves, bilingual interface and fullscreen behavior.
+
 ## v0.3.2 — 2026-10-10
 
 - Add an image context menu with canvas-only removal, layer controls and Source delete.

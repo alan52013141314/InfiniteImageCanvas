@@ -1,3 +1,4 @@
+pub(crate) mod features;
 mod tabs;
 use crate::{
     media,
@@ -87,6 +88,10 @@ pub struct App {
     external_blocked: bool,
     tab_action: Option<tabs::Action>,
     image_menu: Option<u64>,
+    blank_menu: Option<[f64; 2]>,
+    preload: crate::storage::PreloadSettings,
+    preload_decoder: Option<media::Decoder>,
+    reading: Option<features::Reading>,
     tab_headers: Vec<tabs::Header>,
     active_tab: usize,
     tab_scroll_to_active: bool,
@@ -158,6 +163,10 @@ impl App {
             external_blocked: false,
             tab_action: None,
             image_menu: None,
+            blank_menu: None,
+            preload: settings.preload,
+            preload_decoder: None,
+            reading: None,
             tab_headers: Vec::new(),
             active_tab: 0,
             tab_scroll_to_active: true,
@@ -485,7 +494,13 @@ impl App {
                 }
             }
         }
-        while let Ok(decoded) = self.decoder.rx.try_recv() {
+        while let Ok(decoded) = self.decoder.rx.try_recv().or_else(|_| {
+            self.preload_decoder
+                .as_ref()
+                .ok_or(std::sync::mpsc::TryRecvError::Empty)?
+                .rx
+                .try_recv()
+        }) {
             if let Some(preview) = self.previews.get_mut(&decoded.path) {
                 preview.pending = false;
                 match decoded.result {
@@ -736,6 +751,10 @@ impl App {
         }
     }
     fn fit(&mut self) {
+        if self.reading.is_some() {
+            self.fit_reading();
+            return;
+        }
         if self.canvas.items.is_empty() {
             self.canvas.center = [0.0; 2];
             self.canvas.zoom = 1.0;
@@ -765,6 +784,20 @@ impl App {
         )
     }
     fn rect(&self, item: &Item) -> Rect {
+        if let Some(reading) = &self.reading {
+            let p = reading.positions.get(&item.id).copied().unwrap_or([0.0; 2]);
+            let origin = self.canvas_rect.center();
+            return Rect::from_min_size(
+                Pos2::new(
+                    ((p[0] - reading.center[0]) * reading.zoom) as f32 + origin.x,
+                    ((p[1] - reading.center[1]) * reading.zoom) as f32 + origin.y,
+                ),
+                Vec2::new(
+                    (item.size[0] * reading.zoom) as f32,
+                    (item.size[1] * reading.zoom) as f32,
+                ),
+            );
+        }
         let p = self.canvas.screen(
             item.position,
             [
@@ -1096,9 +1129,13 @@ impl App {
                                 self.fit();
                             }
                             ui.label(
-                                egui::RichText::new(format!("{:.1}%", self.canvas.zoom * 100.0))
-                                    .small()
-                                    .color(theme::MUTED),
+                                egui::RichText::new(format!(
+                                    "{:.1}%",
+                                    self.reading.as_ref().map_or(self.canvas.zoom, |r| r.zoom)
+                                        * 100.0
+                                ))
+                                .small()
+                                .color(theme::MUTED),
                             );
                             ui.separator();
                             ui.label(
@@ -1138,7 +1175,7 @@ impl App {
                         .on_hover_text(&self.status);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(
-                            egui::RichText::new(self.language.text("中鍵平移  ·  滾輪縮放  ·  Shift 多選"))
+                            egui::RichText::new(self.language.text(if self.reading.is_some() { "滾輪閱讀  ·  Ctrl＋滾輪縮放  ·  方向鍵換頁" } else { "中鍵平移  ·  滾輪縮放  ·  Shift 多選" }))
                                 .small()
                                 .color(theme::MUTED),
                         )
@@ -1153,6 +1190,7 @@ impl App {
     fn canvas_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         self.canvas_rect = response.rect;
+        self.refresh_reading();
         painter.rect_filled(response.rect, 0.0, theme::BACKGROUND);
         let (top_ui, bottom_ui) = self.toolbar_visibility(ctx);
         let blocked = self.external_blocked
@@ -1197,7 +1235,34 @@ impl App {
                 }
             });
         }
-        if !blocked && !response.context_menu_opened() {
+        if !blocked && self.image_menu.is_none() {
+            if response.secondary_clicked() {
+                self.blank_menu = response.interact_pointer_pos().map(|p| self.world(p));
+            }
+            response.context_menu(|ui| {
+                if ui.button(self.language.text("設定")).clicked() {
+                    self.settings_open = true;
+                    ui.close_menu();
+                }
+                ui.add_enabled_ui(
+                    self.reading.is_none() && !self.canvas.items.is_empty(),
+                    |ui| {
+                        if ui.button(self.language.text("聚攏到此處")).clicked() {
+                            self.gather(self.blank_menu);
+                            ui.close_menu();
+                        }
+                        if ui.button(self.language.text("聚攏到圖片中心")).clicked() {
+                            self.gather(None);
+                            ui.close_menu();
+                        }
+                    },
+                );
+            });
+        }
+        if !blocked && !response.context_menu_opened() && self.reading.is_some() {
+            self.reading_input(ctx, pointer);
+        }
+        if !blocked && !response.context_menu_opened() && self.reading.is_none() {
             if let Some(p) = pointer.filter(|p| response.rect.contains(*p)) {
                 let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
                 if scroll != 0.0 {
@@ -1424,8 +1489,9 @@ impl App {
         let texture_budget = media::memory_budget().min(256 * 1024 * 1024);
         let max_side =
             ((texture_budget as f64 / (visible as f64 * 4.0)).sqrt() as u32).clamp(1, 4096);
-        self.previews
-            .retain(|_, p| p.pending || p.touched.elapsed() < Duration::from_secs(1));
+        self.previews.retain(|_, p| {
+            self.preload.enabled || p.pending || p.touched.elapsed() < Duration::from_secs(1)
+        });
         for item in &self.canvas.items {
             let rect = self.rect(item);
             if !rect.intersects(response.rect) {
@@ -1509,9 +1575,11 @@ impl App {
                 }
             }
         }
+        self.preload_images(ctx);
         // Keep offscreen resources briefly, then release them; item metadata is never dropped.
-        self.previews
-            .retain(|_, p| p.pending || p.touched.elapsed() < Duration::from_secs(3));
+        self.previews.retain(|_, p| {
+            self.preload.enabled || p.pending || p.touched.elapsed() < Duration::from_secs(3)
+        });
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
         if let Some(job) = &self.import_job {
@@ -1611,6 +1679,31 @@ impl App {
                                 self.language = previous_language;
                                 self.change_language(chosen);
                             }
+                            ui.separator();
+                            ui.label(self.language.text("圖片載入模式"));
+                            ui.radio_value(
+                                &mut self.preload.enabled,
+                                false,
+                                self.language.text("只載入可見圖片"),
+                            );
+                            ui.radio_value(
+                                &mut self.preload.enabled,
+                                true,
+                                self.language.text("預載附近圖片"),
+                            );
+                            ui.horizontal(|ui| {
+                                ui.label(self.language.text("額外預載記憶體（MB）"));
+                                ui.add(
+                                    egui::DragValue::new(&mut self.preload.extra_mb)
+                                        .range(0..=65536)
+                                        .speed(16),
+                                );
+                            });
+                            ui.weak(
+                                self.language.text(
+                                    "預算用於目前分頁的額外預覽快取；原圖解碼仍需暫時記憶體。",
+                                ),
+                            );
                             ui.separator();
                             ui.label(egui::RichText::new(self.language.text("圖片保存")).strong());
                             ui.add_space(4.0);

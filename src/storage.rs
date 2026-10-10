@@ -7,14 +7,18 @@ use std::{
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SessionTab {
+    #[serde(default)]
+    pub reading: Option<crate::app::features::Reading>,
     pub path: Option<PathBuf>,
     pub recovery: PathBuf,
     pub unnamed: bool,
 }
 #[derive(Default, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub preload: PreloadSettings,
     #[serde(default)]
     pub tabs: Option<Vec<SessionTab>>,
     #[serde(default)]
@@ -26,6 +30,20 @@ pub struct Settings {
     pub unnamed: bool,
     #[serde(default)]
     pub random_order: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreloadSettings {
+    pub enabled: bool,
+    pub extra_mb: u32,
+}
+impl Default for PreloadSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            extra_mb: 256,
+        }
+    }
 }
 
 pub fn error(e: impl std::fmt::Display) -> String {

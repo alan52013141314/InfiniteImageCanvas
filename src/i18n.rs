@@ -51,6 +51,22 @@ impl Language {
                 "This file is used by another tab. Choose a different save location."
             }
             "關閉分頁" => "Close tab",
+            "滾輪閱讀  ·  Ctrl＋滾輪縮放  ·  方向鍵換頁" => {
+                "Wheel: scroll · Ctrl+wheel: zoom · Arrows: previous/next"
+            }
+            "圖片載入模式" => "Image loading",
+            "只載入可見圖片" => "Visible images only",
+            "預載附近圖片" => "Preload nearby images",
+            "額外預載記憶體（MB）" => "Extra preload memory (MB)",
+            "預算用於目前分頁的額外預覽快取；原圖解碼仍需暫時記憶體。" => {
+                "Budget for extra previews in the active tab. Source decoding also needs temporary memory."
+            }
+            "聚攏到此處" => "Gather here",
+            "聚攏到圖片中心" => "Gather at image center",
+            "漫畫閱讀模式" => "Comic reading mode",
+            "直向閱讀" => "Vertical reading",
+            "橫向閱讀" => "Horizontal reading",
+            "返回原版面" => "Return to canvas",
             "移除圖片" => "Remove image",
             "請等待匯入或保存完成" => "Wait for import or save operations to finish",
             "永久刪除以下來源檔案，並移除所有已開啟分頁中引用它的圖片。" => {

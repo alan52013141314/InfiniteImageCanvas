@@ -1,4 +1,4 @@
-# InfiniteImageCanvas v0.3.2
+# InfiniteImageCanvas v0.4.0
 
 Extract the Windows x64 release archive into a writable folder, then run the executable. No server, account, or installation is needed. Windows 11 has been tested; Windows 10 is a compatibility target, not a tested environment. An OpenGL 3.3 graphics driver is required.
 
@@ -63,3 +63,13 @@ Right-click the topmost image to Remove image, Bring to front, Send to back, or 
 Source delete shows the actual path and affected open-tab/image counts before permanently deleting that file and removing its references from every open tab. Undo/Redo will not restore those references. File deletion failure preserves the images. Changed tabs continue using normal manual/autosave/close saving.
 
 Reopened embedded images and clipboard images use managed assets: the displayed current asset is deleted, not an unknown external original. Closed canvas files and existing packed backups are not rewritten. Confirmation is disabled while import/open/save work is pending; cancel the dialog to finish or cancel that work first.
+
+## Preload, gather and comic reading (v0.4.0)
+
+Settings → Image loading offers Visible images only (default) or Preload nearby images. Extra preload memory defaults to 256 MB and accepts 0–65536 MB; 0 retains no extra images. Preferences apply globally and persist. Only the active tab preloads, nearest images first; switching tabs releases the previous tab's previews. The budget covers extra preview cache, capped by available memory, not total process memory: source decoding, GIF state and transient work buffers still need memory.
+
+Right-click blank canvas for Settings, Gather here, or Gather at image center. Gathering keeps dimensions/proportions and packs the current image order into a touching grid, centering its bounds at the click or previous group-bounds center. Mixed-height images align to row tops; each next row starts after the previous row's tallest image. Ctrl+Z undoes gathering.
+
+Right-click a tab → Comic reading mode → Vertical reading / Horizontal reading. Images retain dimensions/proportions and follow current image order. The reading view does not change original image positions or the original canvas view. Return to canvas restores that layout. Each tab's direction, position and zoom are remembered in the session.
+
+Wheel scrolls along the reading axis; Ctrl+wheel zooms around the pointer. Up/Down (vertical) or Left/Right (horizontal) jump to the previous/next image start. Fit all fits the current page across the reading axis. Image dragging/resizing and gathering are unavailable during reading; return to canvas to arrange images. Source delete still removes references across tabs.

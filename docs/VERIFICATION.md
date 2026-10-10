@@ -89,3 +89,9 @@ The native Windows v0.3.1 test window was inspected: label and × now share one 
 ## v0.3.2 — 2026-10-10
 
 47 automated tests pass; formatting and strict lint pass. New tests cover real egui image right-click, topmost-image targeting, cancel/confirm, actual temporary source deletion, all-open-tab cleanup, undo/redo and restart, failure retention, packed assets and pending-save exclusion. Source deletion tests touch temporary fixtures only. Native window interaction was not tested in this round. Two optional load benchmarks were not rerun.
+
+## v0.4.0 — 2026-10-11
+
+52 tests passed; formatting, strict lint and release build passed. New coverage includes actual offscreen decode, nearest priority, preview budget reduction/zero and settings persistence; blank-menu Settings/Gather; gather geometry and Undo; reading positions, arrow/wheel/Ctrl+wheel, original-layout save/restart, tab independence and source-delete integration. Two optional load benchmarks were not rerun.
+
+Native isolated Windows inspection with generated page fixtures confirmed tab reading submenu, vertical layout, next-page arrow, blank-canvas Settings and preload controls. Horizontal mode, gathering and Ctrl+wheel were verified through automated events rather than a full native pass. Final mode-aware footer wording was adjusted after native inspection and then rebuilt/tested.

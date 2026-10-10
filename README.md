@@ -4,7 +4,7 @@ A portable Rust image canvas for Windows. Arrange images in an infinite 2D space
 
 ## Download
 
-Get **v0.3.2** from [GitHub Releases](https://github.com/alan52013141314/InfiniteImageCanvas/releases). Extract the archive into a writable folder and launch the executable. Close any older running version before replacing it. Keep your `save file` folder when upgrading.
+Get **v0.4.0** from [GitHub Releases](https://github.com/alan52013141314/InfiniteImageCanvas/releases). Extract the archive into a writable folder and launch the executable. Close any older running version before replacing it. Keep your `save file` folder when upgrading.
 
 Windows 11 x64 is tested. Windows 10 x64 is a compatibility target and has not been tested. An OpenGL 3.3 graphics driver is required. The CRT is statically linked; the executable directly depends only on Windows system DLLs.
 
@@ -27,8 +27,8 @@ Original image count and resolution have no configured limit; capacity depends o
 
 - [English guide](docs/USER-GUIDE.en.md) / [繁體中文操作說明](docs/USER-GUIDE.md)
 - [Changelog](CHANGELOG.md)
-- [Requirements](docs/PR-001.md) / [v0.3.2 requirements](docs/PR-005.md)
-- [Work plan](docs/WORKPLAN-001.md) / [v0.3.2 plan](docs/WORKPLAN-005.md)
+- [Requirements](docs/PR-001.md) / [v0.4.0 requirements](docs/PR-006.md)
+- [Work plan](docs/WORKPLAN-001.md) / [v0.4.0 plan](docs/WORKPLAN-006.md)
 - [Verification and limitations](docs/VERIFICATION.md)
 - [Third-party notices](THIRD-PARTY-NOTICES.txt)
 
@@ -57,3 +57,7 @@ cargo test --locked --release sustained_gif_decoding -- --ignored --nocapture
 Windows 免安裝無限圖片畫布，支援拖入圖片／整個資料夾、GIF 動畫、圖片移動及等比縮放、批次排列、保存與恢復。設定可切換 English／繁體中文；標題及設定會顯示版本號。
 
 從 Releases 下載並解壓縮執行。升級前正常關閉舊版，保留 `save file`。引用模式需要保留原圖；要搬到其他電腦時，請選封裝原圖模式。
+
+## Preloading and reading
+
+[Preload, gathering and comic-reading requirements](docs/PR-006.md) · [Implementation plan](docs/WORKPLAN-006.md). Available in v0.4.0: optional nearby-image preloading, gather commands and independent comic reading modes.

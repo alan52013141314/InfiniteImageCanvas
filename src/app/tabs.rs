@@ -9,6 +9,7 @@ pub(super) enum Action {
     Rename(usize),
     Delete(usize),
     SourceDelete(PathBuf),
+    Reading(usize, Option<features::Orientation>),
 }
 pub(super) struct Header {
     pub name: String,
@@ -83,6 +84,7 @@ impl Workspace {
                     recovery: workspace.directory.join("previous_canvas.icanvas"),
                     path: Some(path),
                     unnamed: settings.unnamed,
+                    reading: None,
                 })
                 .collect()
         });
@@ -94,6 +96,7 @@ impl Workspace {
             }
             let mut tab = workspace.blank();
             tab.recovery = entry.recovery;
+            tab.reading = entry.reading;
             if let Some(path) = entry.path {
                 if !entry.unnamed {
                     tab.current = Some(path.clone());
@@ -120,6 +123,7 @@ impl Workspace {
         if let Some(active) = self.tabs.get(self.active) {
             tab.language = active.language;
             tab.random_order = active.random_order;
+            tab.preload = active.preload;
             tab.canvas.packed = active.canvas.packed;
         }
         tab.recovery = self.next_recovery();
@@ -150,6 +154,7 @@ impl Workspace {
         }
         self.tabs[self.active].finish_drag();
         self.tabs[self.active].previews.clear();
+        self.tabs[self.active].preload_decoder = None;
         self.tabs[self.active].settings_open = false;
         self.active = index;
         self.tabs[index].tab_scroll_to_active = true;
@@ -181,6 +186,7 @@ impl Workspace {
     fn refresh_headers(&mut self) {
         let language = self.tabs[self.active].language;
         let random_order = self.tabs[self.active].random_order;
+        let preload = self.tabs[self.active].preload;
         let headers: Vec<_> = self
             .tabs
             .iter()
@@ -216,6 +222,7 @@ impl Workspace {
         for (index, tab) in self.tabs.iter_mut().enumerate() {
             tab.language = language;
             tab.random_order = random_order;
+            tab.preload = preload;
             tab.fullscreen = self.fullscreen;
             tab.reserved_paths = paths
                 .iter()
@@ -241,6 +248,7 @@ impl Workspace {
                         (tab.saved_once || tab.recovery.exists()).then(|| tab.recovery.clone())
                     }),
                 recovery: tab.recovery.clone(),
+                reading: tab.reading.as_ref().map(features::Reading::snapshot),
                 unnamed: if tab.open_job.is_some() {
                     tab.opening_unnamed
                 } else {
@@ -250,6 +258,7 @@ impl Workspace {
             .collect::<Vec<_>>();
         Settings {
             language: active.language,
+            preload: active.preload,
             packed: active.canvas.packed,
             last: entries[self.active].path.clone(),
             unnamed: entries[self.active].unnamed,
@@ -369,6 +378,10 @@ impl Workspace {
             Action::Select(index) => self.activate(index),
             Action::Close(index) => self.request_close(index),
             Action::SourceDelete(path) => self.source_delete = Some(path),
+            Action::Reading(index, orientation) => {
+                self.activate(index);
+                self.tabs[index].set_reading(orientation);
+            }
             Action::Rename(index) | Action::Delete(index) => {
                 self.activate(index);
                 if self.tabs[index].job.is_none()
@@ -605,6 +618,19 @@ pub(super) fn tab_button(
         action = Some(Action::Reorder(*from, index));
     }
     response.context_menu(|ui| {
+        ui.menu_button(language.text("漫畫閱讀模式"), |ui| {
+            for (label, orientation) in [
+                ("直向閱讀", Some(features::Orientation::Vertical)),
+                ("橫向閱讀", Some(features::Orientation::Horizontal)),
+                ("返回原版面", None),
+            ] {
+                if ui.button(language.text(label)).clicked() {
+                    action = Some(Action::Reading(index, orientation));
+                    ui.close_menu();
+                }
+            }
+        });
+        ui.separator();
         if ui.button(language.text("重新命名")).clicked() {
             action = Some(Action::Rename(index));
             ui.close_menu();
@@ -756,6 +782,7 @@ impl Workspace {
             if tab.canvas.items.len() != before {
                 tab.previews.clear();
                 tab.decoder = media::Decoder::new(self.ctx.clone());
+                tab.preload_decoder = None;
                 tab.changed();
             }
         }
@@ -902,6 +929,253 @@ mod tests {
             );
         }
         ui_frame(w, Vec::new())
+    }
+    #[test]
+    fn reading_source_delete_and_tab_switch_do_not_restore_removed_images() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 10.0);
+        let source = w.tabs[0].canvas.items[0].source.clone();
+        std::fs::create_dir_all(&w.directory).unwrap();
+        std::fs::write(&source, b"source").unwrap();
+        ui_frame(&mut w, vec![]);
+        w.handle_action(Action::Reading(0, Some(features::Orientation::Vertical)));
+        w.add_new();
+        assert!(w.tabs[1].reading.is_none());
+        w.delete_source(&source).unwrap();
+        w.activate(0);
+        ui_frame(&mut w, vec![]);
+        assert!(w.tabs[0].reading.as_ref().unwrap().positions.is_empty());
+        w.handle_action(Action::Reading(0, None));
+        w.tabs[0].undo();
+        assert!(w.tabs[0].canvas.items.is_empty());
+    }
+    #[test]
+    fn blank_context_menu_opens_settings_and_gathers_at_click() {
+        let (_dir, mut w) = setup();
+        w.tabs[0].language = crate::i18n::Language::English;
+        add_item(&mut w.tabs[0], 10.0);
+        ui_frame(&mut w, vec![]);
+        let at = w.tabs[0].canvas_rect.left_top() + Vec2::new(25.0, 25.0);
+        let expected = w.tabs[0].world(at);
+        for pressed in [true, false] {
+            ui_frame(
+                &mut w,
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        let output = ui_frame(&mut w, vec![]);
+        click(&mut w, text_position(&output, "Gather here"));
+        let item = &w.tabs[0].canvas.items[0];
+        assert_eq!(
+            [
+                item.position[0] + item.size[0] / 2.0,
+                item.position[1] + item.size[1] / 2.0
+            ],
+            expected
+        );
+        w.tabs[0].undo();
+        for pressed in [true, false] {
+            ui_frame(
+                &mut w,
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        let output = ui_frame(&mut w, vec![]);
+        let menu_settings = output
+            .shapes
+            .iter()
+            .filter_map(|shape| {
+                if let egui::Shape::Text(t) = &shape.shape
+                    && t.galley.job.text == "Settings"
+                {
+                    Some(t.visual_bounding_rect().center())
+                } else {
+                    None
+                }
+            })
+            .max_by(|a, b| a.y.total_cmp(&b.y))
+            .unwrap();
+        click(&mut w, menu_settings);
+        assert!(w.tabs[0].settings_open);
+        let output = ui_frame(&mut w, vec![]);
+        assert!(text_position(&output, "Preload nearby images").y > 0.0);
+    }
+    #[test]
+    fn gather_preserves_sizes_centers_and_undo() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 100.0);
+        let mut item = w.tabs[0].canvas.items[0].clone();
+        item.id = 2;
+        item.position = [500.0, 300.0];
+        item.size = [50.0, 60.0];
+        w.tabs[0].canvas.items.push(item);
+        let before = w.tabs[0].canvas.items.clone();
+        w.tabs[0].gather(Some([20.0, 40.0]));
+        let items = &w.tabs[0].canvas.items;
+        assert_eq!(items[0].position, [-20.0, 10.0]);
+        assert_eq!(items[1].position, [10.0, 10.0]);
+        assert_eq!(items[0].size, before[0].size);
+        w.tabs[0].undo();
+        assert_eq!(w.tabs[0].canvas.items, before);
+        w.tabs[0].gather(None);
+        assert_eq!(w.tabs[0].canvas.items[0].position, [285.0, 151.0]);
+    }
+    #[test]
+    fn reading_scroll_arrows_zoom_restore_and_session_preserve_original_layout() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 10.0);
+        w.tabs[0].canvas.items[0].size = [200.0, 600.0];
+        let mut second = w.tabs[0].canvas.items[0].clone();
+        second.id = 2;
+        second.position = [1000.0, 2000.0];
+        w.tabs[0].canvas.items.push(second);
+        let original = w.tabs[0].canvas.clone();
+        ui_frame(&mut w, vec![]);
+        w.handle_action(Action::Reading(0, Some(features::Orientation::Vertical)));
+        ui_frame(&mut w, vec![]);
+        assert_eq!(
+            w.tabs[0].reading.as_ref().unwrap().positions[&2],
+            [0.0, 600.0]
+        );
+        ui_frame(
+            &mut w,
+            vec![egui::Event::Key {
+                key: egui::Key::ArrowDown,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Default::default(),
+            }],
+        );
+        assert_eq!(w.tabs[0].reading.as_ref().unwrap().page, 1);
+        let before = w.tabs[0].reading.as_ref().unwrap().center;
+        let at = w.tabs[0].canvas_rect.center();
+        ui_frame(
+            &mut w,
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: Vec2::new(0.0, -100.0),
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+        assert!(w.tabs[0].reading.as_ref().unwrap().center[1] > before[1]);
+        let ctx = w.ctx.clone();
+        let modifiers = egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        };
+        let before_zoom = w.tabs[0].reading.as_ref().unwrap().zoom;
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(720.0, 480.0))),
+                modifiers,
+                events: vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: Vec2::new(0.0, 100.0),
+                        modifiers,
+                    },
+                ],
+                ..Default::default()
+            },
+            |ctx| w.update_ui(ctx),
+        );
+        assert!(w.tabs[0].reading.as_ref().unwrap().zoom > before_zoom);
+        assert_eq!(w.tabs[0].canvas, original);
+        w.handle_action(Action::Reading(0, Some(features::Orientation::Horizontal)));
+        assert_eq!(
+            w.tabs[0].reading.as_ref().unwrap().positions[&2],
+            [200.0, 0.0]
+        );
+        w.tabs[0].save(false, None);
+        settle(&mut w);
+        w.persist();
+        let mut restored =
+            Workspace::initialize(egui::Context::default(), w.directory.clone(), None);
+        settle(&mut restored);
+        assert_eq!(restored.tabs[0].canvas, original);
+        assert_eq!(
+            restored.tabs[0].reading.as_ref().unwrap().orientation,
+            features::Orientation::Horizontal
+        );
+        restored.handle_action(Action::Reading(0, None));
+        assert_eq!(restored.tabs[0].canvas, original);
+    }
+    #[test]
+    fn preload_prioritizes_nearby_limits_budget_and_persists_settings() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 0.0);
+        w.tabs[0].canvas.zoom = 1.0;
+        w.tabs[0].canvas.center = [0.0; 2];
+        w.tabs[0].canvas_rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 400.0));
+        w.tabs[0].canvas.items.clear();
+        for n in 0..5 {
+            let path = w.directory.join(format!("preload{n}.png"));
+            std::fs::create_dir_all(&w.directory).unwrap();
+            image::RgbaImage::new(8, 8).save(&path).unwrap();
+            w.tabs[0].canvas.items.push(Item {
+                id: n + 1,
+                source: path,
+                position: [600.0 + n as f64 * 1000.0, 0.0],
+                size: [512.0, 512.0],
+            });
+        }
+        w.tabs[0].preload = storage::PreloadSettings {
+            enabled: true,
+            extra_mb: 1,
+        };
+        let ctx = w.ctx.clone();
+        w.tabs[0].preload_images(&ctx);
+        assert_eq!(w.tabs[0].previews.len(), 1);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while w.tabs[0].previews.values().any(|p| p.pending) && Instant::now() < deadline {
+            w.poll();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(w.tabs[0].previews.values().all(|p| p.texture.is_some()));
+        w.tabs[0].canvas.items[0].position = [0.0, 0.0];
+        w.tabs[0].preload_images(&ctx);
+        assert!(
+            w.tabs[0].previews[&w.directory.join("preload0.png")]
+                .texture
+                .is_some()
+        );
+        w.tabs[0].canvas.items[0].position = [600.0, 0.0];
+        assert!(
+            w.tabs[0]
+                .previews
+                .contains_key(&w.directory.join("preload0.png"))
+        );
+        w.persist();
+        let settings = storage::read_settings(&w.directory);
+        assert_eq!(settings.preload, w.tabs[0].preload);
+        w.tabs[0].preload.extra_mb = 0;
+        w.tabs[0].preload_images(&ctx);
+        assert!(w.tabs[0].previews.is_empty());
+        w.tabs[0].preload.enabled = false;
+        w.tabs[0].preload_images(&ctx);
+        assert!(w.tabs[0].preload_decoder.is_none());
     }
     #[test]
     fn source_delete_waits_for_saves_and_suspends_all_autosave_clocks() {
