@@ -40,11 +40,16 @@ impl Reading {
 }
 impl App {
     pub(super) fn fit_reading(&mut self) {
+        let Some(reading) = &self.reading else {
+            return;
+        };
+        self.fit_reading_axis(usize::from(reading.orientation == Orientation::Horizontal));
+    }
+    pub(super) fn fit_reading_axis(&mut self, cross: usize) {
         let Some(reading) = &mut self.reading else {
             return;
         };
         if let Some(item) = self.canvas.items.get(reading.page) {
-            let cross = usize::from(reading.orientation == Orientation::Horizontal);
             let available = if cross == 0 {
                 self.canvas_rect.width()
             } else {
@@ -56,6 +61,7 @@ impl App {
     }
     pub(super) fn set_reading(&mut self, orientation: Option<Orientation>) {
         self.finish_drag();
+        self.navigation = Navigation::default();
         self.reading = orientation.map(|orientation| Reading {
             orientation,
             center: [0.0; 2],
@@ -115,13 +121,14 @@ impl App {
             if zooming && delta != 0.0 {
                 let origin = self.canvas_rect.center();
                 let offset = [p.x as f64 - origin.x as f64, p.y as f64 - origin.y as f64];
-                let next = (reading.zoom * (delta * 0.002).exp()).clamp(0.00001, 10000.0);
+                let next = (reading.zoom * (delta * self.wheel.zoom * 0.002).exp())
+                    .clamp(0.00001, 10000.0);
                 for (n, d) in offset.iter().enumerate() {
                     reading.center[n] += d / reading.zoom - d / next;
                 }
                 reading.zoom = next;
             } else {
-                reading.center[axis] -= delta / reading.zoom;
+                reading.center[axis] -= delta * self.wheel.scroll / reading.zoom;
             }
         }
         // Resolve the current page from the reading position after wheel scrolling.
@@ -291,5 +298,260 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct Navigation {
+    pub hold: Option<(f64, Pos2)>,
+    pub anchor: Option<Pos2>,
+    pub cancelled: bool,
+}
+impl App {
+    pub(super) fn reading_fit_menu(&mut self, ui: &mut egui::Ui, target: Option<u64>) {
+        if self.reading.is_none() {
+            return;
+        }
+        for (label, axis) in [("符合視窗寬度", 0), ("符合視窗高度", 1)] {
+            if ui.button(self.language.text(label)).clicked() {
+                if let Some(id) = target
+                    && let Some(index) = self.canvas.items.iter().position(|item| item.id == id)
+                {
+                    self.reading.as_mut().unwrap().page = index;
+                }
+                self.fit_reading_axis(axis);
+                ui.close_menu();
+            }
+        }
+        ui.separator();
+    }
+    pub(super) fn navigation_input(
+        &mut self,
+        ctx: &egui::Context,
+        _painter: &egui::Painter,
+        blocked: bool,
+    ) {
+        let (time, dt, point, pressed, released, down, delta, focused) = ctx.input(|i| {
+            (
+                i.time,
+                i.stable_dt.min(0.05) as f64,
+                i.pointer.hover_pos(),
+                i.pointer.button_pressed(egui::PointerButton::Middle),
+                i.pointer.button_released(egui::PointerButton::Middle),
+                i.pointer.button_down(egui::PointerButton::Middle),
+                i.pointer.delta(),
+                i.focused,
+            )
+        });
+        if blocked || !focused || point.is_none() || ctx.memory(|m| m.any_popup_open()) {
+            self.navigation = Navigation::default();
+            return;
+        }
+        let point = point.unwrap();
+        if pressed {
+            if self.navigation.anchor.take().is_some() {
+                self.navigation.hold = None;
+                self.navigation.cancelled = true;
+            } else if self.canvas_rect.contains(point) {
+                self.navigation.hold = Some((time, point));
+                self.navigation.cancelled = false;
+            }
+        }
+        if released {
+            if !self.navigation.cancelled
+                && let Some((start, anchor)) = self.navigation.hold.take()
+                && time - start >= 0.5
+            {
+                self.navigation.anchor = Some(anchor);
+            }
+            self.navigation.hold = None;
+            self.navigation.cancelled = false;
+        }
+        let painter = ctx
+            .layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("auto_scroll_marker"),
+            ))
+            .with_clip_rect(self.canvas_rect);
+        let movement = if let Some(anchor) = self.navigation.anchor {
+            let offset = point - anchor;
+            painter.circle_stroke(anchor, 12.0, Stroke::new(1.5_f32, ACCENT));
+            painter.line_segment(
+                [anchor - Vec2::new(6.0, 0.0), anchor + Vec2::new(6.0, 0.0)],
+                Stroke::new(1.0_f32, ACCENT),
+            );
+            painter.line_segment(
+                [anchor - Vec2::new(0.0, 6.0), anchor + Vec2::new(0.0, 6.0)],
+                Stroke::new(1.0_f32, ACCENT),
+            );
+            ctx.set_cursor_icon(egui::CursorIcon::AllScroll);
+            let speed = |d: f32| (d.abs() - 12.0).clamp(0.0, 1000.0) * d.signum();
+            Vec2::new(speed(offset.x), speed(offset.y)) * (4.0 * dt) as f32
+        } else if down
+            && self.navigation.hold.is_some()
+            && !self.navigation.cancelled
+            && self.canvas_rect.contains(point)
+        {
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+            -delta
+        } else {
+            Vec2::ZERO
+        };
+        if movement != Vec2::ZERO {
+            if let Some(reading) = &mut self.reading {
+                reading.center[0] += movement.x as f64 / reading.zoom;
+                reading.center[1] += movement.y as f64 / reading.zoom;
+            } else {
+                self.canvas.center[0] += movement.x as f64 / self.canvas.zoom;
+                self.canvas.center[1] += movement.y as f64 / self.canvas.zoom;
+                self.changed();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::*;
+    fn frame(
+        app: &mut App,
+        ctx: &egui::Context,
+        time: f64,
+        events: Vec<egui::Event>,
+        focused: bool,
+    ) {
+        let _ = ctx.run(
+            egui::RawInput {
+                time: Some(time),
+                focused,
+                screen_rect: Some(app.canvas_rect),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                let painter = ctx.layer_painter(egui::LayerId::background());
+                app.navigation_input(ctx, &painter, false);
+            },
+        );
+    }
+    fn button(pos: Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Middle,
+            pressed,
+            modifiers: Default::default(),
+        }
+    }
+    #[test]
+    fn middle_hold_autoscroll_threshold_speed_stop_and_focus_in_both_modes() {
+        for reading in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let ctx = egui::Context::default();
+            let mut app = App::initialize_mode(ctx.clone(), dir.path().to_path_buf(), None, false);
+            app.canvas_rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0));
+            if reading {
+                app.set_reading(Some(Orientation::Vertical));
+            }
+            let anchor = Pos2::new(300.0, 300.0);
+            frame(
+                &mut app,
+                &ctx,
+                0.0,
+                vec![egui::Event::PointerMoved(anchor), button(anchor, true)],
+                true,
+            );
+            frame(&mut app, &ctx, 0.49, vec![button(anchor, false)], true);
+            assert!(app.navigation.anchor.is_none());
+            frame(&mut app, &ctx, 1.0, vec![button(anchor, true)], true);
+            frame(&mut app, &ctx, 1.51, vec![button(anchor, false)], true);
+            assert_eq!(app.navigation.anchor, Some(anchor));
+            let center = |a: &App| a.reading.as_ref().map_or(a.canvas.center, |r| r.center);
+            let before = center(&app);
+            frame(
+                &mut app,
+                &ctx,
+                1.55,
+                vec![egui::Event::PointerMoved(anchor + Vec2::new(60.0, 60.0))],
+                true,
+            );
+            let near = center(&app);
+            frame(
+                &mut app,
+                &ctx,
+                1.59,
+                vec![egui::Event::PointerMoved(anchor + Vec2::new(120.0, 120.0))],
+                true,
+            );
+            let far = center(&app);
+            assert!(near[0] > before[0] && near[1] > before[1]);
+            assert!(far[0] - near[0] > near[0] - before[0]);
+            let point = anchor + Vec2::new(120.0, 120.0);
+            frame(&mut app, &ctx, 1.63, vec![button(point, true)], true);
+            assert!(app.navigation.anchor.is_none());
+            frame(&mut app, &ctx, 2.3, vec![button(point, false)], true);
+            assert!(app.navigation.anchor.is_none());
+            assert_eq!(center(&app), far);
+            app.navigation.anchor = Some(anchor);
+            frame(&mut app, &ctx, 2.4, vec![], false);
+            assert!(app.navigation.anchor.is_none());
+        }
+    }
+    #[test]
+    fn reading_fit_axes_and_wheel_multipliers_preserve_normal_canvas() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        let mut app = App::initialize_mode(ctx.clone(), dir.path().to_path_buf(), None, false);
+        app.canvas_rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0));
+        app.canvas.items.push(Item {
+            id: 1,
+            source: dir.path().join("page.png"),
+            position: [50.0, 70.0],
+            size: [200.0, 400.0],
+        });
+        let original = app.canvas.clone();
+        app.set_reading(Some(Orientation::Vertical));
+        app.fit_reading_axis(0);
+        assert_eq!(app.reading.as_ref().unwrap().zoom, 3.8);
+        app.fit_reading_axis(1);
+        assert_eq!(app.reading.as_ref().unwrap().zoom, 1.4);
+        let scroll = |app: &mut App, multiplier: f64, zoom: bool| {
+            app.wheel = storage::WheelSettings {
+                scroll: multiplier,
+                zoom: multiplier,
+            };
+            app.reading.as_mut().unwrap().zoom = 1.0;
+            app.reading.as_mut().unwrap().center = [0.0; 2];
+            let modifiers = egui::Modifiers {
+                ctrl: zoom,
+                command: zoom,
+                ..Default::default()
+            };
+            let _ = ctx.run(
+                egui::RawInput {
+                    modifiers,
+                    events: vec![egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: Vec2::new(0.0, -100.0),
+                        modifiers,
+                    }],
+                    ..Default::default()
+                },
+                |ctx| app.reading_input(ctx, Some(Pos2::new(400.0, 300.0))),
+            );
+            app.reading.as_ref().unwrap().clone()
+        };
+        let one = scroll(&mut app, 1.0, false);
+        let two = scroll(&mut app, 2.0, false);
+        assert_eq!(two.center[1], one.center[1] * 2.0);
+        let one = scroll(&mut app, 1.0, true);
+        let two = scroll(&mut app, 2.0, true);
+        assert!((two.zoom - one.zoom.powi(2)).abs() < 1e-10);
+        assert_eq!(app.canvas, original);
+        let settings = Settings {
+            wheel: app.wheel,
+            ..Default::default()
+        };
+        storage::write_settings(dir.path(), &settings).unwrap();
+        assert_eq!(storage::read_settings(dir.path()).wheel, app.wheel);
     }
 }

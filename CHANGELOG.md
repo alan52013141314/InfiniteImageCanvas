@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.1 — 2026-10-11
+
+- Hold middle for 0.5 seconds and release for center-based auto-scroll in both canvas and comic modes; press middle again to stop.
+- Cancel navigation on focus/window loss, menus/dialogs and tab/mode switches; keep ordinary middle dragging.
+- Add comic context-menu Fit to window width / height with original-layout preservation.
+- Add persistent global scroll and zoom wheel sensitivity controls (0.1–5×).
+
 ## v0.4.0 — 2026-10-11
 
 - Optional nearest-first background preloading with a persistent extra-preview memory budget; keep viewport-only loading as default.

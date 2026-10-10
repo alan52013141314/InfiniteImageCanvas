@@ -18,6 +18,8 @@ pub struct SessionTab {
 #[derive(Default, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
+    pub wheel: WheelSettings,
+    #[serde(default)]
     pub preload: PreloadSettings,
     #[serde(default)]
     pub tabs: Option<Vec<SessionTab>>,
@@ -30,6 +32,35 @@ pub struct Settings {
     pub unnamed: bool,
     #[serde(default)]
     pub random_order: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WheelSettings {
+    pub scroll: f64,
+    pub zoom: f64,
+}
+impl Default for WheelSettings {
+    fn default() -> Self {
+        Self {
+            scroll: 1.0,
+            zoom: 1.0,
+        }
+    }
+}
+impl WheelSettings {
+    pub fn validated(self) -> Self {
+        let clean = |n: f64| {
+            if n.is_finite() {
+                n.clamp(0.1, 5.0)
+            } else {
+                1.0
+            }
+        };
+        Self {
+            scroll: clean(self.scroll),
+            zoom: clean(self.zoom),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

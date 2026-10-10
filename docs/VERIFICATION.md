@@ -95,3 +95,7 @@ The native Windows v0.3.1 test window was inspected: label and × now share one 
 52 tests passed; formatting, strict lint and release build passed. New coverage includes actual offscreen decode, nearest priority, preview budget reduction/zero and settings persistence; blank-menu Settings/Gather; gather geometry and Undo; reading positions, arrow/wheel/Ctrl+wheel, original-layout save/restart, tab independence and source-delete integration. Two optional load benchmarks were not rerun.
 
 Native isolated Windows inspection with generated page fixtures confirmed tab reading submenu, vertical layout, next-page arrow, blank-canvas Settings and preload controls. Horizontal mode, gathering and Ctrl+wheel were verified through automated events rather than a full native pass. Final mode-aware footer wording was adjusted after native inspection and then rebuilt/tested.
+
+## v0.4.1 — 2026-10-11
+
+55 automated tests passed; formatting, strict lint and release build passed. New tests use controlled egui timestamps and pointer events to verify the 0.5-second threshold, distance-dependent speed, both view modes, middle toggle-off without reactivation, focus loss and tab cancellation. Reading fit axes preserve original canvas, the real context menu targets the clicked page, wheel multipliers act independently and global preferences persist. Two optional load benchmarks were not rerun. Native/physical long-hold interaction was not tested this round.

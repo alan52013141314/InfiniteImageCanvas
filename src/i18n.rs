@@ -51,6 +51,14 @@ impl Language {
                 "This file is used by another tab. Choose a different save location."
             }
             "關閉分頁" => "Close tab",
+            "符合視窗寬度" => "Fit to window width",
+            "符合視窗高度" => "Fit to window height",
+            "滑鼠滾輪強度" => "Mouse wheel sensitivity",
+            "捲動速度" => "Scroll speed",
+            "縮放速度" => "Zoom speed",
+            "長按中鍵 0.5 秒後放開以自動捲動，再按中鍵停止。" => {
+                "Hold middle for 0.5 seconds, release to auto-scroll; press middle again to stop."
+            }
             "滾輪閱讀  ·  Ctrl＋滾輪縮放  ·  方向鍵換頁" => {
                 "Wheel: scroll · Ctrl+wheel: zoom · Arrows: previous/next"
             }

@@ -1,4 +1,4 @@
-# InfiniteImageCanvas v0.4.0
+# InfiniteImageCanvas v0.4.1
 
 Extract the Windows x64 release archive into a writable folder, then run the executable. No server, account, or installation is needed. Windows 11 has been tested; Windows 10 is a compatibility target, not a tested environment. An OpenGL 3.3 graphics driver is required.
 
@@ -73,3 +73,11 @@ Right-click blank canvas for Settings, Gather here, or Gather at image center. G
 Right-click a tab → Comic reading mode → Vertical reading / Horizontal reading. Images retain dimensions/proportions and follow current image order. The reading view does not change original image positions or the original canvas view. Return to canvas restores that layout. Each tab's direction, position and zoom are remembered in the session.
 
 Wheel scrolls along the reading axis; Ctrl+wheel zooms around the pointer. Up/Down (vertical) or Left/Right (horizontal) jump to the previous/next image start. Fit all fits the current page across the reading axis. Image dragging/resizing and gathering are unavailable during reading; return to canvas to arrange images. Source delete still removes references across tabs.
+
+## Middle-button auto-scroll and wheel sensitivity (v0.4.1)
+
+In normal canvas or comic reading, hold middle for at least 0.5 seconds and release to enable auto-scroll. The press position becomes a visible center marker. Move farther from it to scroll faster in that direction, including diagonally; a small center dead zone stays still. Press middle again to stop. Short middle drags still pan. Leaving the window, losing focus, opening menus/dialogs or switching tabs/reading modes cancels auto-scroll.
+
+Settings → Mouse wheel sensitivity provides separate persistent Scroll speed and Zoom speed multipliers (0.1–5×, default 1×), shared across tabs. Scroll speed affects comic wheel scrolling; Zoom speed affects normal wheel zoom and comic Ctrl+wheel zoom. Auto-scroll depends on pointer distance, not wheel sensitivity.
+
+In comic mode, right-click an image for Fit to window width / Fit to window height. It becomes the current page and scales proportionally with a small margin. The blank-canvas menu fits the current reading page. Original image sizes and layout positions remain unchanged.

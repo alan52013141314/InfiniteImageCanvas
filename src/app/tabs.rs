@@ -124,6 +124,7 @@ impl Workspace {
             tab.language = active.language;
             tab.random_order = active.random_order;
             tab.preload = active.preload;
+            tab.wheel = active.wheel;
             tab.canvas.packed = active.canvas.packed;
         }
         tab.recovery = self.next_recovery();
@@ -153,6 +154,7 @@ impl Workspace {
             return;
         }
         self.tabs[self.active].finish_drag();
+        self.tabs[self.active].navigation = features::Navigation::default();
         self.tabs[self.active].previews.clear();
         self.tabs[self.active].preload_decoder = None;
         self.tabs[self.active].settings_open = false;
@@ -187,6 +189,7 @@ impl Workspace {
         let language = self.tabs[self.active].language;
         let random_order = self.tabs[self.active].random_order;
         let preload = self.tabs[self.active].preload;
+        let wheel = self.tabs[self.active].wheel;
         let headers: Vec<_> = self
             .tabs
             .iter()
@@ -223,6 +226,7 @@ impl Workspace {
             tab.language = language;
             tab.random_order = random_order;
             tab.preload = preload;
+            tab.wheel = wheel;
             tab.fullscreen = self.fullscreen;
             tab.reserved_paths = paths
                 .iter()
@@ -259,6 +263,7 @@ impl Workspace {
         Settings {
             language: active.language,
             preload: active.preload,
+            wheel: active.wheel,
             packed: active.canvas.packed,
             last: entries[self.active].path.clone(),
             unnamed: entries[self.active].unnamed,
@@ -405,6 +410,7 @@ impl Workspace {
             Action::Reorder(from, to) => {
                 if from != to && from < self.tabs.len() && to < self.tabs.len() {
                     self.tabs[self.active].finish_drag();
+                    self.tabs[self.active].navigation = features::Navigation::default();
                     let tab = self.tabs.remove(from);
                     self.tabs.insert(to, tab);
                     self.active = if self.active == from {
@@ -931,6 +937,49 @@ mod tests {
         ui_frame(w, Vec::new())
     }
     #[test]
+    fn reading_context_menu_fits_clicked_page_and_navigation_stops_on_tab_switch() {
+        let (_dir, mut w) = setup();
+        w.tabs[0].language = crate::i18n::Language::English;
+        add_item(&mut w.tabs[0], 10.0);
+        w.tabs[0].canvas.items[0].size = [200.0, 200.0];
+        ui_frame(&mut w, vec![]);
+        w.handle_action(Action::Reading(0, Some(features::Orientation::Vertical)));
+        let original = w.tabs[0].canvas.clone();
+        let at = w.tabs[0].rect(&w.tabs[0].canvas.items[0]).center();
+        for pressed in [true, false] {
+            ui_frame(
+                &mut w,
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        let output = ui_frame(&mut w, vec![]);
+        click(&mut w, text_position(&output, "Fit to window width"));
+        assert_eq!(
+            w.tabs[0].reading.as_ref().unwrap().zoom,
+            (w.tabs[0].canvas_rect.width() as f64 - 40.0) / 200.0
+        );
+        assert_eq!(w.tabs[0].canvas, original);
+        w.tabs[0].navigation.anchor = Some(at);
+        w.add_new();
+        assert!(w.tabs[0].navigation.anchor.is_none());
+        w.tabs[1].wheel = storage::WheelSettings {
+            scroll: 2.0,
+            zoom: 3.0,
+        };
+        w.refresh_headers();
+        w.persist();
+        assert_eq!(w.tabs[0].wheel, w.tabs[1].wheel);
+        assert_eq!(storage::read_settings(&w.directory).wheel, w.tabs[1].wheel);
+    }
+    #[test]
     fn reading_source_delete_and_tab_switch_do_not_restore_removed_images() {
         let (_dir, mut w) = setup();
         add_item(&mut w.tabs[0], 10.0);
@@ -1014,7 +1063,7 @@ mod tests {
         click(&mut w, menu_settings);
         assert!(w.tabs[0].settings_open);
         let output = ui_frame(&mut w, vec![]);
-        assert!(text_position(&output, "Preload nearby images").y > 0.0);
+        assert!(text_position(&output, "Mouse wheel sensitivity").y > 0.0);
     }
     #[test]
     fn gather_preserves_sizes_centers_and_undo() {

@@ -90,6 +90,8 @@ pub struct App {
     image_menu: Option<u64>,
     blank_menu: Option<[f64; 2]>,
     preload: crate::storage::PreloadSettings,
+    wheel: crate::storage::WheelSettings,
+    navigation: features::Navigation,
     preload_decoder: Option<media::Decoder>,
     reading: Option<features::Reading>,
     tab_headers: Vec<tabs::Header>,
@@ -165,6 +167,8 @@ impl App {
             image_menu: None,
             blank_menu: None,
             preload: settings.preload,
+            wheel: settings.wheel.validated(),
+            navigation: features::Navigation::default(),
             preload_decoder: None,
             reading: None,
             tab_headers: Vec::new(),
@@ -1214,6 +1218,7 @@ impl App {
         }
         if !blocked && let Some(id) = self.image_menu {
             response.context_menu(|ui| {
+                self.reading_fit_menu(ui, Some(id));
                 if ui.button(self.language.text("移除圖片")).clicked() {
                     self.selected = [id].into_iter().collect();
                     self.delete();
@@ -1240,6 +1245,7 @@ impl App {
                 self.blank_menu = response.interact_pointer_pos().map(|p| self.world(p));
             }
             response.context_menu(|ui| {
+                self.reading_fit_menu(ui, None);
                 if ui.button(self.language.text("設定")).clicked() {
                     self.settings_open = true;
                     ui.close_menu();
@@ -1259,6 +1265,7 @@ impl App {
                 );
             });
         }
+        self.navigation_input(ctx, &painter, blocked || self.settings_open);
         if !blocked && !response.context_menu_opened() && self.reading.is_some() {
             self.reading_input(ctx, pointer);
         }
@@ -1267,7 +1274,7 @@ impl App {
                 let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
                 if scroll != 0.0 {
                     self.canvas.zoom_at(
-                        (scroll as f64 * 0.002).exp(),
+                        (scroll as f64 * self.wheel.zoom * 0.002).exp(),
                         [p.x as f64, p.y as f64],
                         [
                             response.rect.center().x as f64,
@@ -1275,15 +1282,6 @@ impl App {
                         ],
                     );
                     self.changed();
-                }
-                if ctx.input(|i| i.pointer.button_down(egui::PointerButton::Middle)) {
-                    let d = ctx.input(|i| i.pointer.delta());
-                    if d != Vec2::ZERO {
-                        self.canvas.center[0] -= d.x as f64 / self.canvas.zoom;
-                        self.canvas.center[1] -= d.y as f64 / self.canvas.zoom;
-                        self.changed();
-                    }
-                    ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
                 }
                 if ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
                     // A fast drag may press, move and release between two redraws.
@@ -1679,6 +1677,22 @@ impl App {
                                 self.language = previous_language;
                                 self.change_language(chosen);
                             }
+                            ui.separator();
+                            ui.label(self.language.text("滑鼠滾輪強度"));
+                            ui.add(
+                                egui::Slider::new(&mut self.wheel.scroll, 0.1..=5.0)
+                                    .text(self.language.text("捲動速度"))
+                                    .suffix("×"),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut self.wheel.zoom, 0.1..=5.0)
+                                    .text(self.language.text("縮放速度"))
+                                    .suffix("×"),
+                            );
+                            ui.weak(
+                                self.language
+                                    .text("長按中鍵 0.5 秒後放開以自動捲動，再按中鍵停止。"),
+                            );
                             ui.separator();
                             ui.label(self.language.text("圖片載入模式"));
                             ui.radio_value(
