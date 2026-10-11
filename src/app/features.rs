@@ -244,9 +244,10 @@ impl App {
                 (
                     rect.center().distance_sq(self.canvas_rect.center()),
                     item.source.clone(),
-                    (rect.width().max(rect.height()) * ctx.pixels_per_point())
-                        .ceil()
-                        .clamp(1.0, 4096.0) as u32,
+                    media::preview_side(
+                        rect.width().max(rect.height()) * ctx.pixels_per_point(),
+                        4096,
+                    ),
                 )
             })
             .collect();
@@ -257,7 +258,9 @@ impl App {
             if retained.contains(&path) {
                 continue;
             }
-            let cost = side as u64 * side as u64 * 4;
+            // Keep ready larger tiers without undercounting their retained memory.
+            let retained_side = self.previews.get(&path).map_or(side, |p| p.side.max(side));
+            let cost = retained_side as u64 * retained_side as u64 * 4;
             if cost > remaining {
                 continue;
             }
@@ -287,15 +290,10 @@ impl App {
             preview.touched = Instant::now();
             if !preview.pending
                 && preview.error.is_none()
-                && (preview.texture.is_none() || preview.side != side)
+                && (preview.texture.is_none() || preview.side < side)
+                && decoder.tx.try_send(media::Request { path, side }).is_ok()
             {
-                // Drop larger cached textures before issuing a budget-reduced replacement.
-                if preview.side > side {
-                    preview.texture = None;
-                }
-                if decoder.tx.try_send(media::Request { path, side }).is_ok() {
-                    preview.pending = true;
-                }
+                preview.pending = true;
             }
         }
     }

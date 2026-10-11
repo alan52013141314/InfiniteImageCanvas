@@ -1495,10 +1495,10 @@ impl App {
             if !rect.intersects(response.rect) {
                 continue;
             }
-            let side = (rect.width().max(rect.height()) * ctx.pixels_per_point())
-                .ceil()
-                .clamp(1.0, max_side as f32) as u32;
-            let side = side.next_power_of_two().min(max_side);
+            let side = media::preview_side(
+                rect.width().max(rect.height()) * ctx.pixels_per_point(),
+                max_side,
+            );
             let preview = self
                 .previews
                 .entry(item.source.clone())

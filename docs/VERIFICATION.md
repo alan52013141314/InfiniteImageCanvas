@@ -99,3 +99,7 @@ Native isolated Windows inspection with generated page fixtures confirmed tab re
 ## v0.4.1 — 2026-10-11
 
 55 automated tests passed; formatting, strict lint and release build passed. New tests use controlled egui timestamps and pointer events to verify the 0.5-second threshold, distance-dependent speed, both view modes, middle toggle-off without reactivation, focus loss and tab cancellation. Reading fit axes preserve original canvas, the real context menu targets the clicked page, wheel multipliers act independently and global preferences persist. Two optional load benchmarks were not rerun. Native/physical long-hold interaction was not tested this round.
+
+## v0.4.2 — 2026-10-11
+
+57 automated tests passed; two optional benchmarks not rerun. Formatting, strict Clippy and Windows x64 release build passed. The new 2048 MB regression failed before the fix at the assertion that a decoded texture survives moving offscreen. It passes after shared resolution tiers and sufficient-texture retention. A second real-decoder/UI-frame test verifies cold offscreen preload, viewport entry, fractional zoom, zoom-out/back and zero-budget eviction in normal, vertical and horizontal modes. Native GPU timing was not measured; the reproduced failure is an explicit CPU-side texture disposal before rendering. No user images or saves were used.

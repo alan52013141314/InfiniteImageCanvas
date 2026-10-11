@@ -38,6 +38,12 @@ struct Animation {
     bytes: u64,
 }
 
+pub fn preview_side(pixels: f32, max_side: u32) -> u32 {
+    (pixels.ceil().clamp(1.0, max_side as f32) as u32)
+        .next_power_of_two()
+        .min(max_side)
+}
+
 pub fn memory_budget() -> u64 {
     #[cfg(windows)]
     {

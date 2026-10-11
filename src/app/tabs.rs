@@ -937,6 +937,110 @@ mod tests {
         ui_frame(w, Vec::new())
     }
     #[test]
+    fn preload_2048mb_keeps_ready_texture_when_panning_out_and_back() {
+        let (_dir, mut w) = setup();
+        add_item(&mut w.tabs[0], 0.0);
+        w.tabs[0].canvas.center = [0.0; 2];
+        w.tabs[0].canvas.zoom = 1.0;
+        w.tabs[0].canvas.items[0].size = [400.0, 300.0];
+        let path = w.tabs[0].canvas.items[0].source.clone();
+        std::fs::create_dir_all(&w.directory).unwrap();
+        image::RgbaImage::new(400, 300).save(&path).unwrap();
+        w.tabs[0].preload = storage::PreloadSettings {
+            enabled: true,
+            extra_mb: 2048,
+        };
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            ui_frame(&mut w, vec![]);
+            if w.tabs[0]
+                .previews
+                .get(&path)
+                .is_some_and(|p| p.texture.is_some() && !p.pending)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(w.tabs[0].previews[&path].side, 512);
+        w.tabs[0].canvas.center = [5000.0, 0.0];
+        ui_frame(&mut w, vec![]);
+        assert!(
+            w.tabs[0].previews[&path].texture.is_some(),
+            "moving offscreen discarded an already decoded image despite 2048 MB budget"
+        );
+        assert!(
+            !w.tabs[0].previews[&path].pending,
+            "unnecessary background re-decode"
+        );
+        w.tabs[0].canvas.center = [0.0; 2];
+        ui_frame(&mut w, vec![]);
+        assert!(w.tabs[0].previews[&path].texture.is_some());
+        assert!(!w.tabs[0].previews[&path].pending);
+    }
+    #[test]
+    fn offscreen_preload_reuses_texture_across_zoom_and_reading_views() {
+        for orientation in [
+            None,
+            Some(features::Orientation::Vertical),
+            Some(features::Orientation::Horizontal),
+        ] {
+            let (_dir, mut w) = setup();
+            add_item(&mut w.tabs[0], 0.0);
+            w.tabs[0].canvas.items[0].size = [400.0, 300.0];
+            let path = w.tabs[0].canvas.items[0].source.clone();
+            std::fs::create_dir_all(&w.directory).unwrap();
+            image::RgbaImage::new(400, 300).save(&path).unwrap();
+            w.tabs[0].set_reading(orientation);
+            let set_view = |app: &mut App, center, zoom| {
+                if let Some(reading) = &mut app.reading {
+                    reading.center = center;
+                    reading.zoom = zoom;
+                } else {
+                    app.canvas.center = center;
+                    app.canvas.zoom = zoom;
+                }
+            };
+            set_view(&mut w.tabs[0], [5000.0, 0.0], 1.0);
+            w.tabs[0].preload = storage::PreloadSettings {
+                enabled: true,
+                extra_mb: 2048,
+            };
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                ui_frame(&mut w, vec![]);
+                if w.tabs[0]
+                    .previews
+                    .get(&path)
+                    .is_some_and(|p| p.texture.is_some() && !p.pending)
+                {
+                    break;
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            let texture = w.tabs[0].previews[&path].texture.as_ref().unwrap().id();
+            assert_eq!(w.tabs[0].previews[&path].side, 512);
+            for (center, zoom) in [
+                ([0.0; 2], 1.0),
+                ([5000.0, 0.0], 1.01),
+                ([5000.0, 0.0], 0.5),
+                ([0.0; 2], 1.0),
+            ] {
+                set_view(&mut w.tabs[0], center, zoom);
+                ui_frame(&mut w, vec![]);
+                let preview = &w.tabs[0].previews[&path];
+                assert_eq!(preview.texture.as_ref().unwrap().id(), texture);
+                assert!(!preview.pending, "cached tier should not be decoded again");
+            }
+            set_view(&mut w.tabs[0], [5000.0, 0.0], 1.0);
+            w.tabs[0].preload.extra_mb = 0;
+            ui_frame(&mut w, vec![]);
+            assert!(!w.tabs[0].previews.contains_key(&path));
+        }
+    }
+    #[test]
     fn reading_context_menu_fits_clicked_page_and_navigation_stops_on_tab_switch() {
         let (_dir, mut w) = setup();
         w.tabs[0].language = crate::i18n::Language::English;

@@ -1,4 +1,4 @@
-# InfiniteImageCanvas v0.4.1
+# InfiniteImageCanvas v0.4.2
 
 Extract the Windows x64 release archive into a writable folder, then run the executable. No server, account, or installation is needed. Windows 11 has been tested; Windows 10 is a compatibility target, not a tested environment. An OpenGL 3.3 graphics driver is required.
 
@@ -81,3 +81,7 @@ In normal canvas or comic reading, hold middle for at least 0.5 seconds and rele
 Settings → Mouse wheel sensitivity provides separate persistent Scroll speed and Zoom speed multipliers (0.1–5×, default 1×), shared across tabs. Scroll speed affects comic wheel scrolling; Zoom speed affects normal wheel zoom and comic Ctrl+wheel zoom. Auto-scroll depends on pointer distance, not wheel sensitivity.
 
 In comic mode, right-click an image for Fit to window width / Fit to window height. It becomes the current page and scales proportionally with a small margin. The blank-canvas menu fits the current reading page. Original image sizes and layout positions remain unchanged.
+
+## Preload fix (v0.4.2)
+
+Visible and background previews now share resolution tiers. Ready images within budget survive viewport transitions and zoom-out without unnecessary decoding. Preloading remains asynchronous and active-tab-only: initial decoding, tab switches and budget eviction may still show Loading. The MB setting is an extra-cache ceiling capped by available system memory, not a decode-speed control.

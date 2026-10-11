@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.2 — 2026-10-11
+
+- Fix ready preload textures being discarded and decoded again when moving offscreen, even with a large memory budget.
+- Share foreground/background resolution tiers and reuse larger cached previews on zoom-out while accounting for their retained size.
+- Add real decoder/UI-frame regressions for 2048 MB, viewport transitions and both comic orientations.
+
 ## v0.4.1 — 2026-10-11
 
 - Hold middle for 0.5 seconds and release for center-based auto-scroll in both canvas and comic modes; press middle again to stop.
